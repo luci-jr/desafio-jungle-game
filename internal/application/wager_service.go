@@ -400,6 +400,20 @@ func (s *WagerService) ProcessTransactionInTx(
 				if err := s.repo.CreateTransaction(ctx, dbTx, txDomain); err != nil {
 					return nil, err
 				}
+				evRej := domain.NewEventEnvelope(
+					domain.EventTypeWagerTransactionRejected,
+					wallet.ID(), transactionID, transactionID, now,
+					domain.PayloadWagerTransactionRejected{
+						TransactionID: transactionID, ProviderID: req.ProviderID,
+						ExternalTransactionID: req.ExternalTransactionID, WalletID: req.WalletID,
+						PlayerID: req.PlayerID, Kind: string(domain.KindRollback),
+						Amount: req.Money.AmountString(), Currency: req.Money.Currency(),
+						FailureCode: "ROLLBACK_INSUFFICIENT_FUNDS",
+					},
+				)
+				if err := s.repo.CreateOutboxEvent(ctx, dbTx, evRej); err != nil {
+					return nil, err
+				}
 				bal := wallet.Balance()
 				return &WagerResponseDTO{
 					TransactionID:    transactionID,

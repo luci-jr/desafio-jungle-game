@@ -218,6 +218,27 @@ O resultado esperado é `go test ./...` sem falhas e `go vet ./...` sem avisos.
 Os testes de integração só devem ser executados depois que os containers de
 PostgreSQL, LocalStack e Keycloak estiverem prontos.
 
+### Demonstração com três processos independentes
+
+O lock é do PostgreSQL, não da memória da API. Para demonstrá-lo ao avaliador,
+suba a infraestrutura e execute estas três instâncias em terminais diferentes:
+
+```bash
+docker compose up -d postgres localstack keycloak
+
+APP_PORT=8001 go run ./cmd/api
+APP_PORT=8002 go run ./cmd/api
+APP_PORT=8003 go run ./cmd/api
+```
+
+Crie uma carteira com `100.00 BRL` usando o token interno. Em seguida, envie
+duas `BET` distintas de `80.00 BRL`, ao mesmo tempo, para portas diferentes
+(por exemplo, `8001` e `8002`). O resultado esperado é uma transação
+`PROCESSED`, uma `REJECTED` com `INSUFFICIENT_FUNDS`, saldo final `20.00 BRL`
+e um único débito de `80.00` no ledger. A terceira instância (`8003`) pode ser
+usada para consultar o resultado ou consumir a mesma fila SQS; todas usam o
+mesmo PostgreSQL e têm memória e conexões próprias.
+
 ---
 
 ## 📡 7. Mapa da API para Postman e chamadas HTTP

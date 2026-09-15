@@ -46,14 +46,14 @@ Este documento detalha formalmente as escolhas de arquitetura, modelagem de dado
 - Metadados de transporte (headers HTTP, IDs de mensagem SQS) não entram no hash.
 
 ### 3.2. Mecanismo de Idempotência e Double-Check sob Lock
-- **Primeiro Nível (Leitura Otimista):** Antes de abrir transação de escrita, busca no banco por `idempotency_key` ou `(provider_id, external_transaction_id)`. Se já existe e o hash coincide, devolve imediatamente o resultado persistido com `idempotentReplay: true`. Se o hash diverge, devolve `409 Conflict`.
-- **Segundo Nível (Double-Check sob o Lock `FOR UPDATE`):** Para 50 requisições simultâneas que chegam no mesmo milissegundo, todas passarão pelo primeiro nível antes da primeira comitar. Ao adquirir o lock da carteira, a aplicação realiza um double-check dentro da transação `dbTx`. As 49 requisições concorrentes identificam que a transação foi recém-comitada pelo primeiro worker e retornam `idempotentReplay: true` sem executar débito duplo.
-- **Terceiro Nível (Constraints Únicas no PostgreSQL):**
+- **Hash canônico:** a mesma chave só é aceita com o mesmo payload de negócio; divergências retornam `409 Conflict`.
+- **Double-check sob o lock `FOR UPDATE`:** a aplicação inicia a transação, bloqueia exclusivamente a carteira envolvida e então consulta `idempotency_key` e `(provider_id, external_transaction_id)`. Das 50 requisições simultâneas, a primeira confirma a mutação; as demais obtêm o lock em seguida, enxergam o registro já confirmado e retornam `idempotentReplay: true`, sem novo débito.
+- **Constraints únicas no PostgreSQL:**
   ```sql
   CONSTRAINT uq_transactions_provider_external UNIQUE (provider_id, external_transaction_id),
   CONSTRAINT uq_transactions_idempotency UNIQUE (idempotency_key)
   ```
-  Se houver colisão de commit concorrente, o PostgreSQL rejeita com erro `23505 (unique_violation)`. A aplicação captura o erro, consulta a transação persistida e retorna o replay idêntico com segurança.
+  Elas constituem a última barreira de integridade caso uma tentativa concorrente alcance o `INSERT`.
 
 ---
 

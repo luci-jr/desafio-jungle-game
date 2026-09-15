@@ -191,7 +191,11 @@ func (r *Repository) GetLedgerEntries(ctx context.Context, walletId string, curs
 			FROM wallet_ledger_entries l
 			JOIN wallets w ON w.id = l.wallet_id
 			WHERE l.wallet_id = $1
-			  AND l.created_at < (SELECT created_at FROM wallet_ledger_entries WHERE id = $2)
+			  AND (l.created_at, l.id) < (
+				  SELECT created_at, id
+				  FROM wallet_ledger_entries
+				  WHERE id = $2 AND wallet_id = $1
+			  )
 			ORDER BY l.created_at DESC, l.id DESC
 			LIMIT $3
 		`

@@ -16,6 +16,9 @@ coverage.html
 .env
 .env.local
 
+# Material pessoal de estudo; permanece apenas na cópia local.
+SUPER_MANUAL_APRENDIZADO.md
+
 # Configurações de IDEs.
 .idea/
 .vscode/

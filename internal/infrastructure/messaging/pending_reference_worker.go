@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -64,8 +65,20 @@ func (w *PendingReferenceWorker) checkPendingReferences(ctx context.Context) {
 
 		// Tenta buscar a transação de referência no banco
 		ref, err := w.repo.GetTransactionByExternalID(ctx, tx.ProviderID(), tx.ReferenceExternalTransactionID())
-		if err != nil || ref == nil || ref.Status() != domain.StatusProcessed {
-			// Referência ainda não disponível
+		if err != nil {
+			w.logger.Error("Erro ao buscar referência pendente", "transactionId", tx.ID(), "error", err)
+			continue
+		}
+		if ref == nil || !ref.IsTerminal() {
+			// A referência ainda não chegou ou também está em processamento.
+			continue
+		}
+		if err := w.validateReference(ctx, tx, ref); err != nil {
+			failureCode := pendingReferenceFailureCode(err)
+			w.logger.Warn("Referência pendente rejeitada por regra de negócio", "transactionId", tx.ID(), "failureCode", failureCode, "error", err)
+			if rejectErr := w.reject(ctx, tx, failureCode, now); rejectErr != nil {
+				w.logger.Error("Erro ao rejeitar referência pendente", "transactionId", tx.ID(), "error", rejectErr)
+			}
 			continue
 		}
 
@@ -75,18 +88,27 @@ func (w *PendingReferenceWorker) checkPendingReferences(ctx context.Context) {
 			"transactionId", tx.ID(),
 			"referenceId", ref.ID(),
 		)
-		_ = w.resolveTransaction(ctx, tx, ref, now)
+		if err := w.resolveTransaction(ctx, tx, ref, now); err != nil {
+			w.logger.Error("Erro ao resolver referência pendente", "transactionId", tx.ID(), "error", err)
+		}
 	}
 }
 
 func (w *PendingReferenceWorker) rejectExpired(ctx context.Context, tx *domain.WagerTransaction, now time.Time) error {
+	return w.reject(ctx, tx, "REFERENCE_NOT_FOUND", now)
+}
+
+// reject finaliza uma pendência e registra o evento de rejeição no mesmo commit.
+func (w *PendingReferenceWorker) reject(ctx context.Context, tx *domain.WagerTransaction, failureCode string, now time.Time) error {
 	dbTx, err := w.repo.BeginTx(ctx)
 	if err != nil {
 		return err
 	}
 	defer dbTx.Rollback(ctx)
 
-	_ = tx.TransitionToRejected("REFERENCE_NOT_FOUND", now)
+	if err := tx.TransitionToRejected(failureCode, now); err != nil {
+		return err
+	}
 	if err := w.repo.UpdateTransaction(ctx, dbTx, tx); err != nil {
 		return err
 	}
@@ -106,13 +128,61 @@ func (w *PendingReferenceWorker) rejectExpired(ctx context.Context, tx *domain.W
 			Kind:                  string(tx.Kind()),
 			Amount:                tx.Money().AmountString(),
 			Currency:              tx.Money().Currency(),
-			FailureCode:           "REFERENCE_NOT_FOUND",
+			FailureCode:           failureCode,
 		},
 	)
 	if err := w.repo.CreateOutboxEvent(ctx, dbTx, evRej); err != nil {
 		return err
 	}
 	return dbTx.Commit(ctx)
+}
+
+// validateReference repete, no fluxo assíncrono, as mesmas regras usadas quando
+// uma reversão encontra sua referência imediatamente.
+func (w *PendingReferenceWorker) validateReference(ctx context.Context, tx, ref *domain.WagerTransaction) error {
+	if ref.Status() != domain.StatusProcessed {
+		return domain.ErrReferenceNotProcessed
+	}
+
+	if err := validateReferenceFields(tx, ref); err != nil {
+		return err
+	}
+
+	alreadyReversed, err := w.repo.HasSuccessfulReversal(ctx, tx.ProviderID(), tx.ReferenceExternalTransactionID())
+	if err != nil {
+		return err
+	}
+	if alreadyReversed {
+		return domain.ErrReferenceAlreadyReversed
+	}
+	return nil
+}
+
+// validateReferenceFields contém as regras puras compartilhadas pela resolução
+// assíncrona; a verificação de reversão prévia continua persistente no banco.
+func validateReferenceFields(tx, ref *domain.WagerTransaction) error {
+	validKind := (tx.Kind() == domain.KindRefund && ref.Kind() == domain.KindBet) ||
+		(tx.Kind() == domain.KindRollback && (ref.Kind() == domain.KindBet || ref.Kind() == domain.KindWin || ref.Kind() == domain.KindRefund))
+	if !validKind ||
+		ref.ProviderID() != tx.ProviderID() ||
+		ref.PlayerID() != tx.PlayerID() ||
+		ref.WalletID() != tx.WalletID() ||
+		ref.RoundID() != tx.RoundID() ||
+		!ref.Money().Equal(tx.Money()) {
+		return domain.ErrReferenceMismatch
+	}
+	return nil
+}
+
+func pendingReferenceFailureCode(err error) string {
+	switch {
+	case errors.Is(err, domain.ErrReferenceNotProcessed):
+		return "REFERENCE_NOT_PROCESSED"
+	case errors.Is(err, domain.ErrReferenceAlreadyReversed):
+		return "REFERENCE_ALREADY_REVERSED"
+	default:
+		return "REFERENCE_MISMATCH"
+	}
 }
 
 func (w *PendingReferenceWorker) resolveTransaction(
@@ -138,9 +208,7 @@ func (w *PendingReferenceWorker) resolveTransaction(
 	} else {
 		less, _ := wallet.Balance().LessThan(tx.Money())
 		if less {
-			_ = tx.TransitionToRejected("ROLLBACK_INSUFFICIENT_FUNDS", now)
-			_ = w.repo.UpdateTransaction(ctx, dbTx, tx)
-			return dbTx.Commit(ctx)
+			return w.rejectInTx(ctx, dbTx, tx, "ROLLBACK_INSUFFICIENT_FUNDS", now)
 		}
 		entry, err = wallet.Debit(tx.Money(), tx.ID(), now)
 	}
@@ -181,7 +249,9 @@ func (w *PendingReferenceWorker) resolveTransaction(
 			BalanceAfter:          wallet.Balance().AmountString(),
 		},
 	)
-	_ = w.repo.CreateOutboxEvent(ctx, dbTx, evProcessed)
+	if err := w.repo.CreateOutboxEvent(ctx, dbTx, evProcessed); err != nil {
+		return err
+	}
 
 	evBalance := domain.NewEventEnvelope(
 		domain.EventTypeWalletBalanceChanged,
@@ -200,8 +270,32 @@ func (w *PendingReferenceWorker) resolveTransaction(
 			WalletVersion: wallet.Version(),
 		},
 	)
-	_ = w.repo.CreateOutboxEvent(ctx, dbTx, evBalance)
+	if err := w.repo.CreateOutboxEvent(ctx, dbTx, evBalance); err != nil {
+		return err
+	}
 
+	return dbTx.Commit(ctx)
+}
+
+// rejectInTx é a variante usada após o lock da carteira já ter sido adquirido.
+func (w *PendingReferenceWorker) rejectInTx(ctx context.Context, dbTx pgx.Tx, tx *domain.WagerTransaction, failureCode string, now time.Time) error {
+	if err := tx.TransitionToRejected(failureCode, now); err != nil {
+		return err
+	}
+	if err := w.repo.UpdateTransaction(ctx, dbTx, tx); err != nil {
+		return err
+	}
+	ev := domain.NewEventEnvelope(
+		domain.EventTypeWagerTransactionRejected, tx.WalletID(), tx.ID(), tx.ID(), now,
+		domain.PayloadWagerTransactionRejected{
+			TransactionID: tx.ID(), ProviderID: tx.ProviderID(), ExternalTransactionID: tx.ExternalTransactionID(),
+			WalletID: tx.WalletID(), PlayerID: tx.PlayerID(), Kind: string(tx.Kind()),
+			Amount: tx.Money().AmountString(), Currency: tx.Money().Currency(), FailureCode: failureCode,
+		},
+	)
+	if err := w.repo.CreateOutboxEvent(ctx, dbTx, ev); err != nil {
+		return err
+	}
 	return dbTx.Commit(ctx)
 }
 
