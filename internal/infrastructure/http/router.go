@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"backend-challenge-go/internal/infrastructure/auth"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -27,11 +28,15 @@ func NewRouter(h *Handler, authValidator *auth.TokenValidator, logger *slog.Logg
 	r.Group(func(protected chi.Router) {
 		protected.Use(authValidator.MiddlewareHTTP)
 
-		// Carteiras
-		protected.Post("/wallets", h.CreateWallet)
-		protected.Get("/wallets/{walletId}", h.GetWallet)
-		protected.Get("/wallets/{walletId}/ledger", h.GetLedger)
-		protected.Post("/wallets/{walletId}/reconciliation", h.ReconcileWallet)
+		// Operações de carteira são internas e não ficam disponíveis para tokens
+		// de provedores de jogos.
+		protected.Group(func(internal chi.Router) {
+			internal.Use(auth.RequireInternal)
+			internal.Post("/wallets", h.CreateWallet)
+			internal.Get("/wallets/{walletId}", h.GetWallet)
+			internal.Get("/wallets/{walletId}/ledger", h.GetLedger)
+			internal.Post("/wallets/{walletId}/reconciliation", h.ReconcileWallet)
+		})
 
 		// Transações Financeiras de Apostas
 		protected.Post("/wagering/transactions", h.ProcessTransaction)

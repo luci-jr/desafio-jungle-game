@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"backend-challenge-go/internal/domain"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -439,6 +440,28 @@ func (r *Repository) GetTransactionByExternalIDTx(ctx context.Context, tx pgx.Tx
 	return r.scanTransaction(tx.QueryRow(ctx, query, providerId, externalId))
 }
 
+// HasSuccessfulReversal verifica se a referência já recebeu REFUND ou ROLLBACK.
+// A consulta complementa o índice único parcial da migration e torna a regra
+// explícita no caso de uso antes da tentativa de inserção.
+func (r *Repository) HasSuccessfulReversal(
+	ctx context.Context,
+	providerID string,
+	referenceExternalID string,
+) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM wager_transactions
+			WHERE provider_id = $1
+			  AND reference_external_transaction_id = $2
+			  AND kind IN ('REFUND', 'ROLLBACK')
+			  AND status = 'PROCESSED'
+		)
+	`, providerID, referenceExternalID).Scan(&exists)
+	return exists, err
+}
+
 // scanTransaction mapeia a linha SQL para a entidade de domínio.
 func (r *Repository) scanTransaction(row pgx.Row) (*domain.WagerTransaction, error) {
 	var (
@@ -533,24 +556,39 @@ func (r *Repository) CreateOutboxEvent(ctx context.Context, tx pgx.Tx, envelope 
 
 // OutboxRecordDTO representa um registro pendente na tabela outbox_events.
 type OutboxRecordDTO struct {
-	ID        string
-	EventID   string
-	EventType string
-	Payload   []byte
+	ID          string
+	EventID     string
+	EventType   string
+	AggregateID string
+	Payload     []byte
+	RetryCount  int
 }
 
-// FetchPendingOutboxEvents busca eventos pendentes com FOR UPDATE SKIP LOCKED.
-// Permite que múltiplas instâncias publiquem eventos em paralelo sem duplicidade nem bloqueio.
-func (r *Repository) FetchPendingOutboxEvents(ctx context.Context, limit int) ([]OutboxRecordDTO, error) {
+// ClaimPendingOutboxEvents reserva eventos pendentes para uma instância.
+//
+// A reserva fica persistida no banco. Se a instância cair, outra poderá
+// assumir o evento depois que claim_until expirar.
+func (r *Repository) ClaimPendingOutboxEvents(ctx context.Context, limit int, claimToken string) ([]OutboxRecordDTO, error) {
 	query := `
-		SELECT id, event_id, event_type, payload
-		FROM outbox_events
-		WHERE status = 'PENDING' AND next_retry_at <= NOW()
-		ORDER BY next_retry_at ASC, created_at ASC
-		LIMIT $1
-		FOR UPDATE SKIP LOCKED
+		WITH candidates AS (
+			SELECT id
+			FROM outbox_events
+			WHERE status = 'PENDING'
+			  AND next_retry_at <= NOW()
+			  AND (claim_until IS NULL OR claim_until < NOW())
+			ORDER BY next_retry_at ASC, created_at ASC
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE outbox_events AS events
+		SET claim_token = $2,
+		    claim_until = NOW() + INTERVAL '30 seconds'
+		FROM candidates
+		WHERE events.id = candidates.id
+		RETURNING events.id, events.event_id, events.event_type,
+		          events.aggregate_id, events.payload, events.retry_count
 	`
-	rows, err := r.pool.Query(ctx, query, limit)
+	rows, err := r.pool.Query(ctx, query, limit, claimToken)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao buscar eventos pendentes do outbox: %w", err)
 	}
@@ -559,7 +597,14 @@ func (r *Repository) FetchPendingOutboxEvents(ctx context.Context, limit int) ([
 	var records []OutboxRecordDTO
 	for rows.Next() {
 		var rec OutboxRecordDTO
-		if err := rows.Scan(&rec.ID, &rec.EventID, &rec.EventType, &rec.Payload); err != nil {
+		if err := rows.Scan(
+			&rec.ID,
+			&rec.EventID,
+			&rec.EventType,
+			&rec.AggregateID,
+			&rec.Payload,
+			&rec.RetryCount,
+		); err != nil {
 			return nil, err
 		}
 		records = append(records, rec)
@@ -567,17 +612,28 @@ func (r *Repository) FetchPendingOutboxEvents(ctx context.Context, limit int) ([
 	return records, nil
 }
 
-// MarkOutboxPublished marca o evento como publicado.
-func (r *Repository) MarkOutboxPublished(ctx context.Context, id string) error {
-	query := `UPDATE outbox_events SET status = 'PUBLISHED', published_at = NOW() WHERE id = $1`
-	_, err := r.pool.Exec(ctx, query, id)
+// MarkOutboxPublished confirma a publicação somente para quem reservou o evento.
+func (r *Repository) MarkOutboxPublished(ctx context.Context, id, claimToken string) error {
+	query := `
+		UPDATE outbox_events
+		SET status = 'PUBLISHED', published_at = NOW(), claim_token = NULL, claim_until = NULL
+		WHERE id = $1 AND claim_token = $2
+	`
+	_, err := r.pool.Exec(ctx, query, id, claimToken)
 	return err
 }
 
-// IncrementOutboxRetry atualiza a tentativa com backoff exponencial.
-func (r *Repository) IncrementOutboxRetry(ctx context.Context, id string, nextRetry time.Time) error {
-	query := `UPDATE outbox_events SET retry_count = retry_count + 1, next_retry_at = $1 WHERE id = $2`
-	_, err := r.pool.Exec(ctx, query, nextRetry, id)
+// IncrementOutboxRetry libera a reserva e agenda uma nova tentativa.
+func (r *Repository) IncrementOutboxRetry(ctx context.Context, id, claimToken string, nextRetry time.Time) error {
+	query := `
+		UPDATE outbox_events
+		SET retry_count = retry_count + 1,
+		    next_retry_at = $1,
+		    claim_token = NULL,
+		    claim_until = NULL
+		WHERE id = $2 AND claim_token = $3
+	`
+	_, err := r.pool.Exec(ctx, query, nextRetry, id, claimToken)
 	return err
 }
 
@@ -602,6 +658,48 @@ func (r *Repository) SaveInboxMessage(ctx context.Context, tx pgx.Tx, consumerNa
 	`
 	_, err := tx.Exec(ctx, query, consumerName, messageId, payloadHash)
 	return err
+}
+
+// TrySaveInboxMessage registra a mensagem e informa se ela foi inserida agora.
+//
+// A operação ocorre na mesma transação do processamento financeiro. Em uma
+// reentrega, o hash original também é conferido para detectar adulteração ou
+// reutilização indevida do mesmo messageId.
+func (r *Repository) TrySaveInboxMessage(
+	ctx context.Context,
+	tx pgx.Tx,
+	consumerName string,
+	messageId string,
+	payloadHash string,
+) (bool, error) {
+	var insertedID string
+	err := tx.QueryRow(ctx, `
+		INSERT INTO inbox_messages (id, consumer_name, message_id, payload_hash, processed_at, created_at)
+		VALUES (uuid_generate_v4(), $1, $2, $3, NOW(), NOW())
+		ON CONFLICT (consumer_name, message_id) DO NOTHING
+		RETURNING id
+	`, consumerName, messageId, payloadHash).Scan(&insertedID)
+
+	if err == nil {
+		return true, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return false, err
+	}
+
+	var storedHash string
+	if err := tx.QueryRow(ctx, `
+		SELECT payload_hash
+		FROM inbox_messages
+		WHERE consumer_name = $1 AND message_id = $2
+	`, consumerName, messageId).Scan(&storedHash); err != nil {
+		return false, err
+	}
+	if storedHash != payloadHash {
+		return false, domain.ErrInboxPayloadConflict
+	}
+
+	return false, nil
 }
 
 // GetPendingReferenceTransactions busca transações que estão aguardando referência para resolução pelo worker.

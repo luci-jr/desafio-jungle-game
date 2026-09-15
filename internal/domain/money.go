@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"unicode"
 )
 
 // Money é um Value Object imutável que representa valores monetários em unidades mínimas (centavos).
@@ -75,7 +74,7 @@ func NewMoneyFromDecimal(amountStr string, currency string) (Money, error) {
 	// Parsing da parte inteira com checagem de overflow em int64
 	var intPart int64
 	for _, ch := range intPartStr {
-		if !unicode.IsDigit(ch) {
+		if ch < '0' || ch > '9' {
 			return Money{}, ErrInvalidMoneyFormat
 		}
 		digit := int64(ch - '0')
@@ -92,7 +91,8 @@ func NewMoneyFromDecimal(amountStr string, currency string) (Money, error) {
 	cents := intPart * 100
 
 	// Parsing da parte fracionária (2 dígitos)
-	if !unicode.IsDigit(rune(fracPartStr[0])) || !unicode.IsDigit(rune(fracPartStr[1])) {
+	if fracPartStr[0] < '0' || fracPartStr[0] > '9' ||
+		fracPartStr[1] < '0' || fracPartStr[1] > '9' {
 		return Money{}, ErrInvalidMoneyFormat
 	}
 	fracPart := int64(fracPartStr[0]-'0')*10 + int64(fracPartStr[1]-'0')

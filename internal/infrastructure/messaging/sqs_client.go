@@ -12,12 +12,13 @@ import (
 
 // Config define os parâmetros de conexão ao AWS SQS / LocalStack.
 type Config struct {
-	Region    string
-	Endpoint  string
-	AccessKey string
-	SecretKey string
-	QueueURL  string
-	DLQURL    string
+	Region        string
+	Endpoint      string
+	AccessKey     string
+	SecretKey     string
+	QueueURL      string
+	DLQURL        string
+	EventQueueURL string
 }
 
 // NewSQSClient inicializa o cliente SQS com suporte ao endpoint customizado do LocalStack.

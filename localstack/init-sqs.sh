@@ -30,5 +30,12 @@ awslocal sqs create-queue \
     }'
 
 echo " [LocalStack] Fila principal wager-transactions.fifo criada com sucesso!"
+
+# Fila de integração para os eventos publicados pela transactional outbox.
+awslocal sqs create-queue \
+    --queue-name wager-events.fifo \
+    --attributes FifoQueue=true,ContentBasedDeduplication=false
+
+echo " [LocalStack] Fila de eventos wager-events.fifo criada com sucesso!"
 awslocal sqs list-queues
 echo "=========================================================="

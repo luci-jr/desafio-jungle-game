@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS wager_transactions (
 CREATE INDEX IF NOT EXISTS idx_transactions_wallet_id ON wager_transactions(wallet_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_ref_lookup ON wager_transactions(provider_id, reference_external_transaction_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_pending_reference ON wager_transactions(status) WHERE status = 'PENDING_REFERENCE';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_successful_reversal_reference
+    ON wager_transactions(provider_id, reference_external_transaction_id)
+    WHERE status = 'PROCESSED' AND kind IN ('REFUND', 'ROLLBACK');
 
 -- 3. TABELA DE LANÇAMENTOS DO LIVRO-RAZÃO (Wallet Ledger Entries)
 -- Estritamente append-only. Imutável.
@@ -108,8 +111,16 @@ CREATE TABLE IF NOT EXISTS outbox_events (
     status VARCHAR(50) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PUBLISHED', 'FAILED')),
     retry_count INT NOT NULL DEFAULT 0,
     next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    claim_token VARCHAR(255),
+    claim_until TIMESTAMPTZ,
     published_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Atualiza bancos criados pela versão anterior da migration sem exigir perda de dados.
+ALTER TABLE outbox_events
+    ADD COLUMN IF NOT EXISTS claim_token VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS claim_until TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events(status, next_retry_at ASC) WHERE status = 'PENDING';
+CREATE INDEX IF NOT EXISTS idx_outbox_claim ON outbox_events(claim_until) WHERE status = 'PENDING';

@@ -31,7 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupTestApp(t *testing.T) (*httptest.Server, *database.Repository, *pgxpool.Pool, string) {
+func setupTestApp(t *testing.T) (*httptest.Server, *database.Repository, *pgxpool.Pool, string, string) {
 	pool, err := database.NewPostgresPool(database.Config{
 		Host:     "localhost",
 		Port:     "5432",
@@ -61,15 +61,25 @@ func setupTestApp(t *testing.T) (*httptest.Server, *database.Repository, *pgxpoo
 	tokenValidator := auth.NewTokenValidator(jwksURL, issuer)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := internalHttp.NewHandler(walletService, wagerService, reconcileService, pool)
+	sqsConfig := messaging.Config{
+		Region:    "us-east-1",
+		Endpoint:  "http://localhost:4566",
+		AccessKey: "test",
+		SecretKey: "test",
+		QueueURL:  "http://localhost:4566/000000000000/wager-transactions.fifo",
+	}
+	sqsClient, err := messaging.NewSQSClient(sqsConfig)
+	require.NoError(t, err, "falha ao criar cliente SQS de teste")
+	handler := internalHttp.NewHandler(walletService, wagerService, reconcileService, pool, sqsClient, sqsConfig)
 	router := internalHttp.NewRouter(handler, tokenValidator, logger)
 
 	server := httptest.NewServer(router)
 
-	// Obtém token real de teste do Keycloak para provider-a
+	// Obtém tokens separados para operações internas e operações do provedor.
 	tokenA := getOAuthToken(t, "provider-a", "secret-a")
+	internalToken := getOAuthToken(t, "internal-service", "secret-internal")
 
-	return server, repo, pool, tokenA
+	return server, repo, pool, tokenA, internalToken
 }
 
 // testMigrationPath localiza a migration a partir do próprio arquivo de teste.
@@ -109,7 +119,7 @@ func getOAuthToken(t *testing.T, clientID, clientSecret string) string {
 
 // 1. Teste de Imutabilidade do Ledger (Trigger no Banco)
 func TestIntegration_LedgerImmutability(t *testing.T) {
-	server, _, pool, token := setupTestApp(t)
+	server, _, pool, _, internalToken := setupTestApp(t)
 	defer server.Close()
 	defer pool.Close()
 
@@ -117,7 +127,7 @@ func TestIntegration_LedgerImmutability(t *testing.T) {
 	playerID := uuid.NewString()
 	createReq := fmt.Sprintf(`{"playerId":"%s","initialBalance":{"amount":"50.00","currency":"BRL"}}`, playerID)
 	req, _ := http.NewRequest("POST", server.URL+"/wallets", bytes.NewBufferString(createReq))
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+internalToken)
 	req.Header.Set("Content-Type", "application/json")
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -141,7 +151,7 @@ func TestIntegration_LedgerImmutability(t *testing.T) {
 
 // 2. Teste de Abertura de Carteira, Ledger e Reconciliação
 func TestIntegration_WalletCreationAndReconciliation(t *testing.T) {
-	server, _, pool, token := setupTestApp(t)
+	server, _, pool, _, internalToken := setupTestApp(t)
 	defer server.Close()
 	defer pool.Close()
 
@@ -150,7 +160,7 @@ func TestIntegration_WalletCreationAndReconciliation(t *testing.T) {
 	// 1. Criar carteira com 1000.00 BRL
 	reqBody := fmt.Sprintf(`{"playerId":"%s","initialBalance":{"amount":"1000.00","currency":"BRL"}}`, playerID)
 	req, _ := http.NewRequest("POST", server.URL+"/wallets", bytes.NewBufferString(reqBody))
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+internalToken)
 	req.Header.Set("Content-Type", "application/json")
 
 	res, err := http.DefaultClient.Do(req)
@@ -176,7 +186,7 @@ func TestIntegration_WalletCreationAndReconciliation(t *testing.T) {
 
 	// 2. Reconciliação imediata: deve ser consistente com 1 lançamento (OPENING)
 	reqRec, _ := http.NewRequest("POST", server.URL+"/wallets/"+walletID+"/reconciliation", nil)
-	reqRec.Header.Set("Authorization", "Bearer "+token)
+	reqRec.Header.Set("Authorization", "Bearer "+internalToken)
 
 	resRec, err := http.DefaultClient.Do(reqRec)
 	require.NoError(t, err)
@@ -203,7 +213,7 @@ func TestIntegration_WalletCreationAndReconciliation(t *testing.T) {
 
 // 3. Teste de Concorrência 1: 50 Requisições Simultâneas da Mesma Aposta (Deduplicação / Idempotência)
 func TestIntegration_Concurrency_50IdenticalBets(t *testing.T) {
-	server, _, pool, token := setupTestApp(t)
+	server, _, pool, token, internalToken := setupTestApp(t)
 	defer server.Close()
 	defer pool.Close()
 
@@ -212,7 +222,7 @@ func TestIntegration_Concurrency_50IdenticalBets(t *testing.T) {
 	// 1. Criar carteira com 100.00 BRL
 	createReq := fmt.Sprintf(`{"playerId":"%s","initialBalance":{"amount":"100.00","currency":"BRL"}}`, playerID)
 	req, _ := http.NewRequest("POST", server.URL+"/wallets", bytes.NewBufferString(createReq))
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+internalToken)
 	req.Header.Set("Content-Type", "application/json")
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -291,7 +301,7 @@ func TestIntegration_Concurrency_50IdenticalBets(t *testing.T) {
 
 	// 3. Verifica saldo final: deve ser rigorosamente 75.00 BRL
 	reqGet, _ := http.NewRequest("GET", server.URL+"/wallets/"+walletID, nil)
-	reqGet.Header.Set("Authorization", "Bearer "+token)
+	reqGet.Header.Set("Authorization", "Bearer "+internalToken)
 	resGet, err := http.DefaultClient.Do(reqGet)
 	require.NoError(t, err)
 	defer resGet.Body.Close()
@@ -306,7 +316,7 @@ func TestIntegration_Concurrency_50IdenticalBets(t *testing.T) {
 
 	// 4. Reconciliação deve confirmar exatamente 2 lançamentos (OPENING e 1 BET)
 	reqRec, _ := http.NewRequest("POST", server.URL+"/wallets/"+walletID+"/reconciliation", nil)
-	reqRec.Header.Set("Authorization", "Bearer "+token)
+	reqRec.Header.Set("Authorization", "Bearer "+internalToken)
 	resRec, err := http.DefaultClient.Do(reqRec)
 	require.NoError(t, err)
 	defer resRec.Body.Close()
@@ -322,7 +332,7 @@ func TestIntegration_Concurrency_50IdenticalBets(t *testing.T) {
 
 // 4. Teste de Disputa de Concorrência (Seção 8 e 13): Duas apostas de 80.00 sobre saldo de 100.00
 func TestIntegration_Concurrency_DisputeTwoBets(t *testing.T) {
-	server, _, pool, token := setupTestApp(t)
+	server, _, pool, token, internalToken := setupTestApp(t)
 	defer server.Close()
 	defer pool.Close()
 
@@ -331,7 +341,7 @@ func TestIntegration_Concurrency_DisputeTwoBets(t *testing.T) {
 	// 1. Carteira com 100.00 BRL
 	createReq := fmt.Sprintf(`{"playerId":"%s","initialBalance":{"amount":"100.00","currency":"BRL"}}`, playerID)
 	req, _ := http.NewRequest("POST", server.URL+"/wallets", bytes.NewBufferString(createReq))
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+internalToken)
 	req.Header.Set("Content-Type", "application/json")
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -429,7 +439,7 @@ func TestIntegration_Concurrency_DisputeTwoBets(t *testing.T) {
 
 	// 3. Saldo final da carteira deve ser exatamente 20.00 BRL
 	reqGet, _ := http.NewRequest("GET", server.URL+"/wallets/"+walletID, nil)
-	reqGet.Header.Set("Authorization", "Bearer "+token)
+	reqGet.Header.Set("Authorization", "Bearer "+internalToken)
 	resGet, err := http.DefaultClient.Do(reqGet)
 	require.NoError(t, err)
 	defer resGet.Body.Close()
@@ -444,7 +454,7 @@ func TestIntegration_Concurrency_DisputeTwoBets(t *testing.T) {
 
 	// 4. Reconciliação deve comprovar 2 lançamentos (OPENING e apenas 1 débito de 80.00)
 	reqRec, _ := http.NewRequest("POST", server.URL+"/wallets/"+walletID+"/reconciliation", nil)
-	reqRec.Header.Set("Authorization", "Bearer "+token)
+	reqRec.Header.Set("Authorization", "Bearer "+internalToken)
 	resRec, err := http.DefaultClient.Do(reqRec)
 	require.NoError(t, err)
 	defer resRec.Body.Close()
@@ -460,7 +470,7 @@ func TestIntegration_Concurrency_DisputeTwoBets(t *testing.T) {
 
 // 5. Teste de Autenticação e Isolamento entre Provedores
 func TestIntegration_AuthAndProviderIsolation(t *testing.T) {
-	server, _, pool, tokenA := setupTestApp(t)
+	server, _, pool, tokenA, internalToken := setupTestApp(t)
 	defer server.Close()
 	defer pool.Close()
 
@@ -473,11 +483,22 @@ func TestIntegration_AuthAndProviderIsolation(t *testing.T) {
 	defer resNoAuth.Body.Close()
 	assert.Equal(t, http.StatusUnauthorized, resNoAuth.StatusCode)
 
+	// Operações de carteira exigem a identidade interna, mesmo com token válido.
+	providerWalletReq, _ := http.NewRequest("POST", server.URL+"/wallets", bytes.NewBufferString(
+		`{"playerId":"provider-cannot-open","initialBalance":{"amount":"10.00","currency":"BRL"}}`,
+	))
+	providerWalletReq.Header.Set("Authorization", "Bearer "+tokenA)
+	providerWalletReq.Header.Set("Content-Type", "application/json")
+	providerWalletRes, err := http.DefaultClient.Do(providerWalletReq)
+	require.NoError(t, err)
+	defer providerWalletRes.Body.Close()
+	assert.Equal(t, http.StatusForbidden, providerWalletRes.StatusCode)
+
 	// 2. Provedor A com token válido de Provedor A cria carteira -> 201 Created
 	playerID := uuid.NewString()
 	createReq := fmt.Sprintf(`{"playerId":"%s","initialBalance":{"amount":"10.00","currency":"BRL"}}`, playerID)
 	reqA, _ := http.NewRequest("POST", server.URL+"/wallets", bytes.NewBufferString(createReq))
-	reqA.Header.Set("Authorization", "Bearer "+tokenA)
+	reqA.Header.Set("Authorization", "Bearer "+internalToken)
 	reqA.Header.Set("Content-Type", "application/json")
 	resA, err := http.DefaultClient.Do(reqA)
 	require.NoError(t, err)
@@ -509,7 +530,7 @@ func TestIntegration_AuthAndProviderIsolation(t *testing.T) {
 
 // 6. Teste de Resolução de Reversão Fora de Ordem (PENDING_REFERENCE -> Worker -> PROCESSED)
 func TestIntegration_PendingReferenceResolution(t *testing.T) {
-	server, repo, pool, token := setupTestApp(t)
+	server, repo, pool, token, internalToken := setupTestApp(t)
 	defer server.Close()
 	defer pool.Close()
 
@@ -518,7 +539,7 @@ func TestIntegration_PendingReferenceResolution(t *testing.T) {
 	// 1. Criar carteira com 100.00 BRL
 	createReq := fmt.Sprintf(`{"playerId":"%s","initialBalance":{"amount":"100.00","currency":"BRL"}}`, playerID)
 	req, _ := http.NewRequest("POST", server.URL+"/wallets", bytes.NewBufferString(createReq))
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+internalToken)
 	req.Header.Set("Content-Type", "application/json")
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -565,7 +586,7 @@ func TestIntegration_PendingReferenceResolution(t *testing.T) {
 
 	// Saldo da carteira ainda deve ser 100.00 BRL
 	reqGet, _ := http.NewRequest("GET", server.URL+"/wallets/"+walletID, nil)
-	reqGet.Header.Set("Authorization", "Bearer "+token)
+	reqGet.Header.Set("Authorization", "Bearer "+internalToken)
 	resGet, _ := http.DefaultClient.Do(reqGet)
 	var wCheck struct {
 		Balance struct{ Amount string } `json:"balance"`
@@ -639,7 +660,7 @@ func TestIntegration_PendingReferenceResolution(t *testing.T) {
 
 	// Reconciliação deve confirmar integridade de 3 lançamentos (OPENING, BET, REFUND)
 	reqRec, _ := http.NewRequest("POST", server.URL+"/wallets/"+walletID+"/reconciliation", nil)
-	reqRec.Header.Set("Authorization", "Bearer "+token)
+	reqRec.Header.Set("Authorization", "Bearer "+internalToken)
 	resRec, err := http.DefaultClient.Do(reqRec)
 	require.NoError(t, err)
 	defer resRec.Body.Close()
@@ -655,7 +676,7 @@ func TestIntegration_PendingReferenceResolution(t *testing.T) {
 
 // 7. Teste do Consumidor SQS FIFO e Deduplicação via Inbox
 func TestIntegration_SQSConsumerWorker(t *testing.T) {
-	server, repo, pool, token := setupTestApp(t)
+	server, repo, pool, _, internalToken := setupTestApp(t)
 	defer server.Close()
 	defer pool.Close()
 
@@ -664,7 +685,7 @@ func TestIntegration_SQSConsumerWorker(t *testing.T) {
 	// 1. Criar carteira com 100.00 BRL
 	createReq := fmt.Sprintf(`{"playerId":"%s","initialBalance":{"amount":"100.00","currency":"BRL"}}`, playerID)
 	req, _ := http.NewRequest("POST", server.URL+"/wallets", bytes.NewBufferString(createReq))
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+internalToken)
 	req.Header.Set("Content-Type", "application/json")
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -744,7 +765,7 @@ func TestIntegration_SQSConsumerWorker(t *testing.T) {
 	assert.True(t, hasProcessed, "mensagem deve estar registrada na inbox_messages")
 
 	reqGet, _ := http.NewRequest("GET", server.URL+"/wallets/"+walletID, nil)
-	reqGet.Header.Set("Authorization", "Bearer "+token)
+	reqGet.Header.Set("Authorization", "Bearer "+internalToken)
 	resGet, _ := http.DefaultClient.Do(reqGet)
 	var wCheck struct {
 		Balance struct{ Amount string } `json:"balance"`

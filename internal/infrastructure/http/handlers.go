@@ -10,6 +10,11 @@ import (
 	"backend-challenge-go/internal/application"
 	"backend-challenge-go/internal/domain"
 	"backend-challenge-go/internal/infrastructure/auth"
+	"backend-challenge-go/internal/infrastructure/messaging"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -19,6 +24,8 @@ type Handler struct {
 	wagerService          *application.WagerService
 	reconciliationService *application.ReconciliationService
 	pgPool                *pgxpool.Pool
+	sqsClient             *sqs.Client
+	sqsQueueURL           string
 }
 
 func NewHandler(
@@ -26,12 +33,16 @@ func NewHandler(
 	wagerService *application.WagerService,
 	reconciliationService *application.ReconciliationService,
 	pgPool *pgxpool.Pool,
+	sqsClient *sqs.Client,
+	messagingConfig messaging.Config,
 ) *Handler {
 	return &Handler{
 		walletService:         walletService,
 		wagerService:          wagerService,
 		reconciliationService: reconciliationService,
 		pgPool:                pgPool,
+		sqsClient:             sqsClient,
+		sqsQueueURL:           messagingConfig.QueueURL,
 	}
 }
 
@@ -52,9 +63,21 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if _, err := h.sqsClient.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl:       aws.String(h.sqsQueueURL),
+		AttributeNames: []types.QueueAttributeName{types.QueueAttributeNameAll},
+	}); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status":   "DOWN",
+			"error":    "sqs unreachable: " + err.Error(),
+			"database": "CONNECTED",
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status":   "UP",
 		"database": "CONNECTED",
+		"sqs":      "CONNECTED",
 	})
 }
 

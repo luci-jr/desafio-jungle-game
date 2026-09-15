@@ -92,6 +92,13 @@ func (v *TokenValidator) ValidateToken(tokenString string) (string, error) {
 		return "", ErrInvalidToken
 	}
 
+	// O token precisa ter sido emitido pelo realm configurado nesta aplicação.
+	// Validar somente a assinatura não impede tokens assinados por outro issuer.
+	issuerClaim, ok := claims["iss"].(string)
+	if !ok || issuerClaim != v.issuer {
+		return "", ErrInvalidToken
+	}
+
 	// Extrai providerId da claim personalizada
 	if providerId, ok := claims["providerId"].(string); ok && providerId != "" {
 		return providerId, nil
@@ -202,4 +209,16 @@ func GetProviderID(ctx context.Context) string {
 		return val
 	}
 	return ""
+}
+
+// RequireInternal permite operações administrativas internas, como carteira
+// e reconciliação, somente para o principal com providerId=admin.
+func RequireInternal(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if GetProviderID(r.Context()) != "admin" {
+			http.Error(w, `{"error":"internal identity required"}`, http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

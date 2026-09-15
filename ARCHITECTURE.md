@@ -123,6 +123,11 @@ Este documento detalha formalmente as escolhas de arquitetura, modelagem de dado
   SELECT ... FROM outbox_events WHERE status = 'PENDING' FOR UPDATE SKIP LOCKED
   ```
 - Garante que múltiplas instâncias da aplicação possam publicar eventos simultaneamente sem lock blocking nem publicação duplicada.
+- A publicação é feita na fila FIFO `wager-events.fifo` do SQS. O `eventId` é usado como
+  `MessageDeduplicationId` e o agregado como `MessageGroupId`.
+- Antes de publicar, o worker grava uma reserva persistente (`claim_token` e `claim_until`).
+  Se uma instância cair, outra pode assumir o registro depois do vencimento da reserva.
+- O evento só é marcado como `PUBLISHED` depois que o `SendMessage` retorna sucesso.
 
 ---
 
@@ -130,6 +135,8 @@ Este documento detalha formalmente as escolhas de arquitetura, modelagem de dado
 
 - Integração nativa com **Keycloak** usando fluxo `client_credentials` e validação de tokens JWT RS256 via chaves públicas recuperadas do endpoint JWKS (`/certs`).
 - **Isolamento de Provedores:** O middleware HTTP extrai a claim `providerId` do token autenticado e valida que o provedor autenticado só acesse e envie transações de seu próprio `providerId`. Tentativas de acesso cruzado resultam imediatamente em `403 Forbidden`.
+- As rotas de carteira são restritas ao client interno `internal-service`, cuja claim é
+  `providerId=admin`. Clientes de provedores não podem criar, consultar ou reconciliar carteiras.
 
 ---
 

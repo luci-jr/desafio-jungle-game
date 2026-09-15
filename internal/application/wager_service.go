@@ -7,6 +7,7 @@ import (
 
 	"backend-challenge-go/internal/domain"
 	"backend-challenge-go/internal/infrastructure/database"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -43,8 +44,35 @@ type WagerResponseDTO struct {
 	IdempotentReplay bool          `json:"idempotentReplay"`
 }
 
-// ProcessTransaction executa a transação com garantias estritas de idempotência e concorrência.
+// ProcessTransaction abre e confirma a transação financeira usada pela API HTTP.
 func (s *WagerService) ProcessTransaction(ctx context.Context, req WagerRequestDTO) (*WagerResponseDTO, error) {
+	dbTx, err := s.repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao iniciar transação: %w", err)
+	}
+	defer dbTx.Rollback(ctx)
+
+	response, err := s.ProcessTransactionInTx(ctx, dbTx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := dbTx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("erro ao comitar transação financeira: %w", err)
+	}
+
+	return response, nil
+}
+
+// ProcessTransactionInTx processa a operação usando uma transação já aberta.
+//
+// Esse método permite que o consumidor SQS grave a Inbox junto com a carteira,
+// o ledger, a transação financeira e a Outbox no mesmo commit.
+func (s *WagerService) ProcessTransactionInTx(
+	ctx context.Context,
+	dbTx pgx.Tx,
+	req WagerRequestDTO,
+) (*WagerResponseDTO, error) {
 	now := time.Now().UTC()
 
 	// 1. Cálculo determinístico do Hash Canônico do payload de negócio
@@ -64,44 +92,7 @@ func (s *WagerService) ProcessTransaction(ctx context.Context, req WagerRequestD
 		return nil, fmt.Errorf("falha ao calcular hash canônico: %w", err)
 	}
 
-	// 2. Verificação de Idempotência Persistente
-	existingByKey, err := s.repo.GetTransactionByIdempotencyKey(ctx, req.IdempotencyKey)
-	if err != nil {
-		return nil, err
-	}
-	existingByExtID, err := s.repo.GetTransactionByExternalID(ctx, req.ProviderID, req.ExternalTransactionID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Se já existe transação registrada
-	if existingByKey != nil || existingByExtID != nil {
-		var existing *domain.WagerTransaction
-		if existingByKey != nil {
-			existing = existingByKey
-		} else {
-			existing = existingByExtID
-		}
-
-		// Se a chave for reutilizada com outro external ID, ou o mesmo external ID com outra chave, ou hash divergente -> Conflito 409
-		if existing.PayloadHash() != canonicalHash ||
-			existing.IdempotencyKey() != req.IdempotencyKey ||
-			existing.ExternalTransactionID() != req.ExternalTransactionID {
-			return nil, domain.ErrIdempotencyConflict
-		}
-
-		// Replay Idêntico: retorna o resultado original persistido sem reaplicar movimentação
-		balance := existing.BalanceAfter()
-		return &WagerResponseDTO{
-			TransactionID:    existing.ID(),
-			Status:           string(existing.Status()),
-			Balance:          &balance,
-			FailureCode:      existing.FailureCode(),
-			IdempotentReplay: true,
-		}, nil
-	}
-
-	// 3. Validação das regras de domínio da operação externa
+	// 2. Validação das regras de domínio da operação externa
 	transactionID := uuid.NewString()
 	txDomain, err := domain.NewExternalTransaction(
 		transactionID,
@@ -121,20 +112,13 @@ func (s *WagerService) ProcessTransaction(ctx context.Context, req WagerRequestD
 		return nil, err
 	}
 
-	// 4. Início da Transação Atômica no PostgreSQL com Lock Exclusivo na Carteira
-	dbTx, err := s.repo.BeginTx(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("falha ao iniciar transação: %w", err)
-	}
-	defer dbTx.Rollback(ctx)
-
-	// Bloqueio pessimista (SELECT ... FOR UPDATE) na carteira envolvida
+	// 3. Bloqueio pessimista (SELECT ... FOR UPDATE) na carteira envolvida
 	wallet, err := s.repo.GetWalletForUpdate(ctx, dbTx, req.WalletID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 4.1. Double-Check de Idempotência sob o Lock da Carteira:
+	// 3.1. Double-Check de Idempotência sob o Lock da Carteira:
 	// Se outra transação concorrente da mesma carteira comitou enquanto aguardávamos o lock
 	existingInTx, err := s.repo.GetTransactionByIdempotencyKeyTx(ctx, dbTx, req.IdempotencyKey)
 	if err != nil {
@@ -147,7 +131,6 @@ func (s *WagerService) ProcessTransaction(ctx context.Context, req WagerRequestD
 		}
 	}
 	if existingInTx != nil {
-		_ = dbTx.Rollback(ctx)
 		if existingInTx.PayloadHash() != canonicalHash ||
 			existingInTx.IdempotencyKey() != req.IdempotencyKey ||
 			existingInTx.ExternalTransactionID() != req.ExternalTransactionID {
@@ -202,10 +185,6 @@ func (s *WagerService) ProcessTransaction(ctx context.Context, req WagerRequestD
 				},
 			)
 			if err := s.repo.CreateOutboxEvent(ctx, dbTx, evRej); err != nil {
-				return nil, err
-			}
-
-			if err := dbTx.Commit(ctx); err != nil {
 				return nil, err
 			}
 
@@ -322,10 +301,6 @@ func (s *WagerService) ProcessTransaction(ctx context.Context, req WagerRequestD
 				return nil, err
 			}
 
-			if err := dbTx.Commit(ctx); err != nil {
-				return nil, err
-			}
-
 			bal := wallet.Balance()
 			return &WagerResponseDTO{
 				TransactionID:    transactionID,
@@ -335,9 +310,8 @@ func (s *WagerService) ProcessTransaction(ctx context.Context, req WagerRequestD
 			}, nil
 		}
 
-		// Valida se a referência é válida
-		if ref.Kind() != domain.KindBet || !ref.Money().Equal(req.Money) || ref.PlayerID() != req.PlayerID {
-			return nil, domain.ErrReferenceMismatch
+		if err := s.validateReversalReference(ctx, req, ref, domain.KindBet); err != nil {
+			return nil, err
 		}
 
 		// Devolve o débito da aposta como crédito
@@ -393,10 +367,6 @@ func (s *WagerService) ProcessTransaction(ctx context.Context, req WagerRequestD
 				return nil, err
 			}
 
-			if err := dbTx.Commit(ctx); err != nil {
-				return nil, err
-			}
-
 			bal := wallet.Balance()
 			return &WagerResponseDTO{
 				TransactionID:    transactionID,
@@ -404,6 +374,17 @@ func (s *WagerService) ProcessTransaction(ctx context.Context, req WagerRequestD
 				Balance:          &bal,
 				IdempotentReplay: false,
 			}, nil
+		}
+
+		if err := s.validateReversalReference(
+			ctx,
+			req,
+			ref,
+			domain.KindBet,
+			domain.KindWin,
+			domain.KindRefund,
+		); err != nil {
+			return nil, err
 		}
 
 		// Desfaz o movimento original
@@ -417,9 +398,6 @@ func (s *WagerService) ProcessTransaction(ctx context.Context, req WagerRequestD
 			if less {
 				_ = txDomain.TransitionToRejected("ROLLBACK_INSUFFICIENT_FUNDS", now)
 				if err := s.repo.CreateTransaction(ctx, dbTx, txDomain); err != nil {
-					return nil, err
-				}
-				if err := dbTx.Commit(ctx); err != nil {
 					return nil, err
 				}
 				bal := wallet.Balance()
@@ -460,10 +438,6 @@ func (s *WagerService) ProcessTransaction(ctx context.Context, req WagerRequestD
 		return nil, domain.ErrInvalidTransactionKind
 	}
 
-	if err := dbTx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("erro ao comitar transação financeira: %w", err)
-	}
-
 	finalBalance := wallet.Balance()
 	return &WagerResponseDTO{
 		TransactionID:    transactionID,
@@ -471,6 +445,49 @@ func (s *WagerService) ProcessTransaction(ctx context.Context, req WagerRequestD
 		Balance:          &finalBalance,
 		IdempotentReplay: false,
 	}, nil
+}
+
+// validateReversalReference valida a referência antes de qualquer alteração
+// de saldo. A regra também bloqueia uma segunda reversão bem-sucedida.
+func (s *WagerService) validateReversalReference(
+	ctx context.Context,
+	req WagerRequestDTO,
+	ref *domain.WagerTransaction,
+	allowedKinds ...domain.TransactionKind,
+) error {
+	if ref.Status() != domain.StatusProcessed {
+		return domain.ErrReferenceNotProcessed
+	}
+
+	allowed := false
+	for _, kind := range allowedKinds {
+		if ref.Kind() == kind {
+			allowed = true
+			break
+		}
+	}
+	if !allowed ||
+		ref.ProviderID() != req.ProviderID ||
+		ref.PlayerID() != req.PlayerID ||
+		ref.WalletID() != req.WalletID ||
+		ref.RoundID() != req.RoundID ||
+		!ref.Money().Equal(req.Money) {
+		return domain.ErrReferenceMismatch
+	}
+
+	alreadyReversed, err := s.repo.HasSuccessfulReversal(
+		ctx,
+		req.ProviderID,
+		req.ReferenceExternalTransactionID,
+	)
+	if err != nil {
+		return err
+	}
+	if alreadyReversed {
+		return domain.ErrReferenceAlreadyReversed
+	}
+
+	return nil
 }
 
 // emitProcessedEvents grava atomicamente os eventos de sucesso no outbox.

@@ -1,6 +1,6 @@
 # 🎲 Desafio Backend — Processamento Distribuído de Apostas em Go
 
-Serviço financeiro de alta performance, concorrente e distribuído para processamento de apostas de provedores de jogos (*iGaming / Sportsbook*). Desenvolvido em **Go 1.22+**, composto com **Uber Fx**, com persistência relacional ACID em **PostgreSQL 16**, mensageria assíncrona **AWS SQS FIFO** via **LocalStack**, e autenticação OIDC via **Keycloak**.
+Serviço financeiro concorrente e distribuído para processamento de apostas de provedores de jogos (*iGaming / Sportsbook*). Desenvolvido em **Go 1.26.4**, composto com **Uber Fx**, com persistência relacional ACID em **PostgreSQL 16**, mensageria assíncrona **AWS SQS FIFO** via **LocalStack**, e autenticação OIDC via **Keycloak**.
 
 ---
 
@@ -39,6 +39,7 @@ AWS_ACCESS_KEY_ID=test
 AWS_SECRET_ACCESS_KEY=test
 SQS_QUEUE_URL=http://localhost:4566/000000000000/wager-transactions.fifo
 SQS_DLQ_URL=http://localhost:4566/000000000000/wager-transactions-dlq.fifo
+SQS_EVENT_QUEUE_URL=http://localhost:4566/000000000000/wager-events.fifo
 
 # Autenticação OIDC (Keycloak)
 AUTH_JWKS_URL=http://localhost:8080/realms/betting/protocol/openid-connect/certs
@@ -107,16 +108,30 @@ O Keycloak inicializa com o realm `betting` e dois clientes pré-configurados co
 |---|---|---|---|
 | Provedor A | `provider-a` | `secret-a` | `provider-a` |
 | Provedor B | `provider-b` | `secret-b` | `provider-b` |
+| Serviço interno | `internal-service` | `secret-internal` | `admin` |
 
-### Como obter um Token JWT de Teste:
+### Como obter os tokens JWT de teste
+
+Token do provedor, usado nas operações de aposta:
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8080/realms/betting/protocol/openid-connect/token \
+PROVIDER_TOKEN=$(curl -s -X POST http://localhost:8080/realms/betting/protocol/openid-connect/token \
   -d "grant_type=client_credentials" \
   -d "client_id=provider-a" \
   -d "client_secret=secret-a" | jq -r .access_token)
 
-echo $TOKEN
+echo $PROVIDER_TOKEN
 ```
+
+Token interno, usado nas operações de carteira e reconciliação:
+```bash
+INTERNAL_TOKEN=$(curl -s -X POST http://localhost:8080/realms/betting/protocol/openid-connect/token \
+  -d "grant_type=client_credentials" \
+  -d "client_id=internal-service" \
+  -d "client_secret=secret-internal" | jq -r .access_token)
+```
+
+As rotas de carteira exigem `INTERNAL_TOKEN`. Os tokens dos provedores são
+usados somente para enviar e consultar suas próprias apostas.
 
 ---
 
@@ -145,11 +160,140 @@ go test -v -race ./tests/...
 go vet ./...
 ```
 
+### Testes implementados
+
+| Grupo | Cenários cobertos |
+|---|---|
+| Domínio | Parsing de `Money`, escala fixa, overflow, moedas incompatíveis, soma, subtração e serialização JSON |
+| Carteira e ledger | Saldo não negativo, débito, crédito, versão, equação contábil e imutabilidade do ledger |
+| Integração | Migrations, abertura de carteira, reconciliação e trigger append-only do ledger |
+| Idempotência | Cinquenta requisições simultâneas da mesma aposta e replay persistente |
+| Concorrência | Duas apostas de `80.00` sobre saldo de `100.00` |
+| Autorização | Token ausente, isolamento entre provedores e bloqueio de carteira para provedores |
+| Referência | `REFUND` antes da `BET`, estado `PENDING_REFERENCE` e resolução pelo worker |
+| SQS | Consumidor FIFO, Inbox, deduplicação e alteração do saldo após consumo |
+
+Os testes de integração usam PostgreSQL, LocalStack e Keycloak reais por Docker.
+O Keycloak precisa ser recriado quando o `realm-export.json` mudar:
+
+```bash
+docker compose up -d postgres localstack
+docker compose up -d --force-recreate keycloak
+```
+
+### Comandos executados na validação
+
+```bash
+# Compilar os testes sem executá-los
+go test -run '^$' ./tests/...
+
+# Rodar toda a suíte
+go test ./...
+
+# Rodar a suíte com logs detalhados
+go test -v ./tests/...
+
+# Verificar condições de corrida
+go test -race ./...
+
+# Verificar problemas estáticos
+go vet ./...
+
+# Construir a imagem sem usar cache
+docker compose build --no-cache api
+
+# Subir a API depois do build
+docker compose up -d api
+
+# Conferir os containers e logs
+docker compose ps
+docker compose logs --no-color --tail=120 api
+
+# Conferir liveness e readiness
+curl -i http://localhost:8000/health/live
+curl -i http://localhost:8000/health/ready
+```
+
+O resultado esperado é `go test ./...` sem falhas e `go vet ./...` sem avisos.
+Os testes de integração só devem ser executados depois que os containers de
+PostgreSQL, LocalStack e Keycloak estiverem prontos.
+
 ---
 
-## 📡 7. Exemplos de Chamadas à API HTTP
+## 📡 7. Mapa da API para Postman e chamadas HTTP
 
-### 7.1. Health Checks (Públicos)
+### 7.1. Configuração do ambiente no Postman
+
+Crie um Environment com estas variáveis:
+
+| Variável | Valor inicial | Uso |
+|---|---|---|
+| `baseUrl` | `http://localhost:8000` | URL da API |
+| `keycloakUrl` | `http://localhost:8080` | URL do Keycloak |
+| `providerId` | `provider-a` | Provedor dos testes |
+| `providerToken` | vazio | Token JWT do provedor |
+| `internalToken` | vazio | Token JWT interno |
+| `walletId` | vazio | Preenchida após criar carteira |
+| `betExternalId` | `postman-bet-001` | ID externo da aposta |
+
+Para obter os tokens no Postman, crie uma requisição `POST` para:
+
+```text
+{{keycloakUrl}}/realms/betting/protocol/openid-connect/token
+```
+
+Use `Body > x-www-form-urlencoded`:
+
+```text
+grant_type=client_credentials
+client_id=provider-a
+client_secret=secret-a
+```
+
+Repita com `client_id=internal-service` e `client_secret=secret-internal`.
+Copie o campo `access_token` para a variável correspondente.
+
+### 7.2. Mapa dos endpoints
+
+| Método | Endpoint | Token | Resultado esperado |
+|---|---|---|---|
+| `GET` | `/health/live` | Nenhum | `200` com processo ativo |
+| `GET` | `/health/ready` | Nenhum | `200` com PostgreSQL e SQS conectados |
+| `POST` | `/wallets` | `internalToken` | `201` e carteira criada |
+| `GET` | `/wallets/{walletId}` | `internalToken` | `200` com saldo e versão |
+| `GET` | `/wallets/{walletId}/ledger` | `internalToken` | `200` com lançamentos |
+| `POST` | `/wallets/{walletId}/reconciliation` | `internalToken` | `200` com consistência contábil |
+| `POST` | `/wagering/transactions` | `providerToken` | `200` com resultado da operação |
+| `GET` | `/wagering/transactions/{transactionId}` | `providerToken` | `200` se pertencer ao provedor |
+| `GET` | `/providers/{providerId}/wagering/transactions/{externalTransactionId}` | `providerToken` | `200` se o provedor for autorizado |
+
+Todas as rotas de negócio precisam do header:
+
+```text
+Authorization: Bearer {{providerToken}}
+```
+
+Nas rotas de carteira, use `{{internalToken}}`. Em `POST /wagering/transactions`,
+adicione também:
+
+```text
+Idempotency-Key: {{providerId}}:{{betExternalId}}
+```
+
+### 7.3. Ordem sugerida no Postman
+
+1. Obtenha `providerToken` e `internalToken` no Keycloak.
+2. Execute `POST /wallets` usando `internalToken` e salve o campo `id` em `walletId`.
+3. Execute `GET /wallets/{{walletId}}` para conferir o saldo.
+4. Execute `POST /wagering/transactions` usando `providerToken` e `Idempotency-Key`.
+5. Repita a mesma aposta para observar `idempotentReplay: true`.
+6. Consulte o ledger e execute a reconciliação usando `internalToken`.
+7. Para `REFUND` ou `ROLLBACK`, use o `externalTransactionId` da operação original.
+
+Os exemplos abaixo usam `curl` e reproduzem as mesmas requisições que podem ser
+criadas no Postman.
+
+### 7.4. Health Checks (Públicos)
 ```bash
 # Liveness (saúde do processo)
 curl -s http://localhost:8000/health/live
@@ -158,10 +302,10 @@ curl -s http://localhost:8000/health/live
 curl -s http://localhost:8000/health/ready
 ```
 
-### 7.2. Criar Carteira com Saldo Inicial
+### 7.5. Criar Carteira com Saldo Inicial
 ```bash
 curl -s -X POST http://localhost:8000/wallets \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $INTERNAL_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "playerId": "0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
@@ -169,22 +313,22 @@ curl -s -X POST http://localhost:8000/wallets \
   }' | jq
 ```
 
-### 7.3. Consultar Saldo da Carteira
+### 7.6. Consultar Saldo da Carteira
 ```bash
 curl -s http://localhost:8000/wallets/<WALLET_ID> \
-  -H "Authorization: Bearer $TOKEN" | jq
+  -H "Authorization: Bearer $INTERNAL_TOKEN" | jq
 ```
 
-### 7.4. Consultar Extrato (Ledger) com Paginação por Cursor
+### 7.7. Consultar Extrato (Ledger) com Paginação por Cursor
 ```bash
 curl -s "http://localhost:8000/wallets/<WALLET_ID>/ledger?limit=50" \
-  -H "Authorization: Bearer $TOKEN" | jq
+  -H "Authorization: Bearer $INTERNAL_TOKEN" | jq
 ```
 
-### 7.5. Enviar Aposta (`BET`) com Chave de Idempotência
+### 7.8. Enviar Aposta (`BET`) com Chave de Idempotência
 ```bash
 curl -s -X POST http://localhost:8000/wagering/transactions \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $PROVIDER_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: provider-a:tx-101" \
   -d '{
@@ -199,10 +343,10 @@ curl -s -X POST http://localhost:8000/wagering/transactions \
   }' | jq
 ```
 
-### 7.6. Enviar Prêmio (`WIN`)
+### 7.9. Enviar Prêmio (`WIN`)
 ```bash
 curl -s -X POST http://localhost:8000/wagering/transactions \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $PROVIDER_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: provider-a:tx-102" \
   -d '{
@@ -217,10 +361,10 @@ curl -s -X POST http://localhost:8000/wagering/transactions \
   }' | jq
 ```
 
-### 7.7. Enviar Estorno (`REFUND`) com Referência Externa
+### 7.10. Enviar Estorno (`REFUND`) com Referência Externa
 ```bash
 curl -s -X POST http://localhost:8000/wagering/transactions \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $PROVIDER_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: provider-a:tx-103" \
   -d '{
@@ -236,16 +380,16 @@ curl -s -X POST http://localhost:8000/wagering/transactions \
   }' | jq
 ```
 
-### 7.8. Consultar Transação por Identificador Externo
+### 7.11. Consultar Transação por Identificador Externo
 ```bash
 curl -s http://localhost:8000/providers/provider-a/wagering/transactions/tx-101 \
-  -H "Authorization: Bearer $TOKEN" | jq
+  -H "Authorization: Bearer $PROVIDER_TOKEN" | jq
 ```
 
-### 7.9. Reconciliação Contábil da Carteira
+### 7.12. Reconciliação Contábil da Carteira
 ```bash
 curl -s -X POST http://localhost:8000/wallets/<WALLET_ID>/reconciliation \
-  -H "Authorization: Bearer $TOKEN" | jq
+  -H "Authorization: Bearer $INTERNAL_TOKEN" | jq
 ```
 
 ---

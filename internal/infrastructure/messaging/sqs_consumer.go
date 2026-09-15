@@ -2,13 +2,19 @@ package messaging
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"backend-challenge-go/internal/application"
 	"backend-challenge-go/internal/domain"
 	"backend-challenge-go/internal/infrastructure/database"
+
+	"errors"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
@@ -95,44 +101,87 @@ func (w *SQSConsumerWorker) pollAndProcess(ctx context.Context) {
 	for _, msg := range out.Messages {
 		if err := w.handleMessage(ctx, msg); err != nil {
 			w.logger.Error("Falha ao processar mensagem do SQS", "messageId", *msg.MessageId, "error", err)
-			// Falha transitória: a mensagem voltará após o VisibilityTimeout ou irá para a DLQ após 3 tentativas
+			if isTerminalMessageError(err) {
+				// Rejeições de negócio já auditadas não precisam de novas tentativas.
+				if deleteErr := w.deleteMessage(ctx, msg); deleteErr != nil {
+					w.logger.Error("Falha ao remover mensagem terminal do SQS", "messageId", *msg.MessageId, "error", deleteErr)
+				}
+			}
+			// Falhas transitórias permanecem invisíveis até o timeout e seguem para a DLQ.
 		} else {
 			// Sucesso ou rejeição terminal definitiva: apaga mensagem da fila
-			_, _ = w.sqsClient.DeleteMessage(ctx, &sqs.DeleteMessageInput{
-				QueueUrl:      aws.String(w.queueURL),
-				ReceiptHandle: msg.ReceiptHandle,
-			})
+			if err := w.deleteMessage(ctx, msg); err != nil {
+				w.logger.Error("Falha ao remover mensagem processada do SQS", "messageId", *msg.MessageId, "error", err)
+			}
 		}
 	}
 }
 
+// deleteMessage remove uma mensagem somente depois de um resultado durável.
+func (w *SQSConsumerWorker) deleteMessage(ctx context.Context, msg types.Message) error {
+	_, err := w.sqsClient.DeleteMessage(ctx, &sqs.DeleteMessageInput{
+		QueueUrl:      aws.String(w.queueURL),
+		ReceiptHandle: msg.ReceiptHandle,
+	})
+	return err
+}
+
+// isTerminalMessageError distingue rejeições de negócio de indisponibilidade.
+func isTerminalMessageError(err error) bool {
+	return errors.Is(err, domain.ErrIdempotencyConflict) ||
+		errors.Is(err, domain.ErrCurrencyMismatch) ||
+		errors.Is(err, domain.ErrInvalidTransactionKind) ||
+		errors.Is(err, domain.ErrReferenceNotFound) ||
+		errors.Is(err, domain.ErrReferenceNotProcessed) ||
+		errors.Is(err, domain.ErrReferenceMismatch) ||
+		errors.Is(err, domain.ErrReferenceAlreadyReversed) ||
+		errors.Is(err, domain.ErrOpeningNotAllowedExternally) ||
+		errors.Is(err, domain.ErrInvalidExternalPayload) ||
+		errors.Is(err, domain.ErrInboxPayloadConflict)
+}
+
 func (w *SQSConsumerWorker) handleMessage(ctx context.Context, msg types.Message) error {
+	if msg.Body == nil {
+		return fmt.Errorf("mensagem SQS sem corpo")
+	}
+
+	payloadHashBytes := sha256.Sum256([]byte(*msg.Body))
+	payloadHash := hex.EncodeToString(payloadHashBytes[:])
+
 	var env SQSMessageEnvelope
 	if err := json.Unmarshal([]byte(*msg.Body), &env); err != nil {
-		w.logger.Error("Mensagem inválida no SQS (malformed json), descartando para DLQ", "body", *msg.Body)
-		return nil // Permite descarte para não travar a fila com poison pills
+		w.logger.Error("Mensagem inválida no SQS; mantendo para retry/DLQ", "error", err)
+		return fmt.Errorf("mensagem SQS inválida: %w", err)
+	}
+	if env.MessageID == "" || env.Type != "WagerTransactionRequested" {
+		return fmt.Errorf("envelope SQS inválido: messageId e type são obrigatórios")
 	}
 
 	consumerName := "wager-transactions-sqs-consumer"
 
-	// 1. Inbox: Verifica se a mensagem já foi processada anteriormente
-	hasProcessed, err := w.repo.HasInboxMessage(ctx, consumerName, env.MessageID)
+	var data SQSDataPayload
+	if err := json.Unmarshal(env.Data, &data); err != nil {
+		return fmt.Errorf("payload SQS inválido: %w", err)
+	}
+
+	// A Inbox e a operação financeira compartilham esta transação SQL.
+	tx, err := w.repo.BeginTx(ctx)
 	if err != nil {
 		return err
 	}
-	if hasProcessed {
-		w.logger.Info("Mensagem já processada anteriormente (Inbox deduplication)", "messageId", env.MessageID)
-		return nil
+	defer tx.Rollback(ctx)
+
+	inserted, err := w.repo.TrySaveInboxMessage(ctx, tx, consumerName, env.MessageID, payloadHash)
+	if err != nil {
+		return err
+	}
+	if !inserted {
+		w.logger.Info("Mensagem já processada anteriormente", "messageId", env.MessageID)
+		return tx.Commit(ctx)
 	}
 
-	var data SQSDataPayload
-	if err := json.Unmarshal(env.Data, &data); err != nil {
-		w.logger.Error("Payload interno de dados inválido", "error", err)
-		return nil
-	}
-
-	// 2. Chama o caso de uso unificado (compartilhado com a API HTTP)
-	_, err = w.wagerService.ProcessTransaction(ctx, application.WagerRequestDTO{
+	// Chama o caso de uso unificado dentro da mesma transação da Inbox.
+	_, err = w.wagerService.ProcessTransactionInTx(ctx, tx, application.WagerRequestDTO{
 		ProviderID:                     data.ProviderID,
 		ExternalTransactionID:          data.ExternalTransactionID,
 		IdempotencyKey:                 data.IdempotencyKey,
@@ -145,20 +194,8 @@ func (w *SQSConsumerWorker) handleMessage(ctx context.Context, msg types.Message
 		ReferenceExternalTransactionID: data.ReferenceExternalTransactionID,
 	})
 	if err != nil {
-		// Se for conflito de idempotência ou erro de negócio, é terminal
-		w.logger.Warn("Transação SQS rejeitada ou com conflito", "error", err)
-		return nil
-	}
-
-	// 3. Registra na inbox que esta mensagem foi concluída com sucesso
-	tx, err := w.repo.BeginTx(ctx)
-	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
 
-	if err := w.repo.SaveInboxMessage(ctx, tx, consumerName, env.MessageID, "processed"); err != nil {
-		return err
-	}
 	return tx.Commit(ctx)
 }

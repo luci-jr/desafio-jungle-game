@@ -6,18 +6,33 @@ import (
 	"time"
 
 	"backend-challenge-go/internal/infrastructure/database"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/google/uuid"
 )
 
 // OutboxPublisherWorker varre e publica registros pendentes da tabela outbox_events.
 type OutboxPublisherWorker struct {
-	repo   *database.Repository
-	logger *slog.Logger
+	repo       *database.Repository
+	sqsClient  *sqs.Client
+	eventQueue string
+	logger     *slog.Logger
+	claimToken string
 }
 
-func NewOutboxPublisherWorker(repo *database.Repository, logger *slog.Logger) *OutboxPublisherWorker {
+func NewOutboxPublisherWorker(
+	repo *database.Repository,
+	sqsClient *sqs.Client,
+	cfg Config,
+	logger *slog.Logger,
+) *OutboxPublisherWorker {
 	return &OutboxPublisherWorker{
-		repo:   repo,
-		logger: logger,
+		repo:       repo,
+		sqsClient:  sqsClient,
+		eventQueue: cfg.EventQueueURL,
+		logger:     logger,
+		claimToken: uuid.NewString(),
 	}
 }
 
@@ -39,8 +54,8 @@ func (w *OutboxPublisherWorker) Start(ctx context.Context) {
 }
 
 func (w *OutboxPublisherWorker) publishBatch(ctx context.Context) {
-	// Busca registros com FOR UPDATE SKIP LOCKED para permitir múltiplos publicadores concorrentes
-	records, err := w.repo.FetchPendingOutboxEvents(ctx, 20)
+	// Reserva registros no banco para permitir múltiplos publishers sem disputa duplicada.
+	records, err := w.repo.ClaimPendingOutboxEvents(ctx, 20, w.claimToken)
 	if err != nil {
 		if ctx.Err() == nil {
 			w.logger.Error("Erro ao buscar eventos pendentes do outbox", "error", err)
@@ -55,12 +70,29 @@ func (w *OutboxPublisherWorker) publishBatch(ctx context.Context) {
 			"eventType", rec.EventType,
 		)
 
-		// Simulação / Entrega do evento no barramento
-		// Em produção enviaria ao SNS/SQS/EventBridge; aqui marcamos como publicado
-		if err := w.repo.MarkOutboxPublished(ctx, rec.ID); err != nil {
-			w.logger.Error("Erro ao marcar evento do outbox como publicado", "eventId", rec.EventID, "error", err)
-			nextRetry := time.Now().Add(5 * time.Second)
-			_ = w.repo.IncrementOutboxRetry(ctx, rec.ID, nextRetry)
+		_, err := w.sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
+			QueueUrl:               aws.String(w.eventQueue),
+			MessageBody:            aws.String(string(rec.Payload)),
+			MessageGroupId:         aws.String("aggregate-" + rec.AggregateID),
+			MessageDeduplicationId: aws.String(rec.EventID),
+		})
+		if err != nil {
+			w.logger.Error("Erro ao publicar evento no SQS", "eventId", rec.EventID, "error", err)
+			nextRetry := time.Now().Add(outboxRetryDelay(rec.RetryCount))
+			_ = w.repo.IncrementOutboxRetry(ctx, rec.ID, w.claimToken, nextRetry)
+			continue
+		}
+
+		if err := w.repo.MarkOutboxPublished(ctx, rec.ID, w.claimToken); err != nil {
+			w.logger.Error("Erro ao confirmar publicação do outbox", "eventId", rec.EventID, "error", err)
 		}
 	}
+}
+
+// outboxRetryDelay aplica backoff exponencial limitado para indisponibilidade do broker.
+func outboxRetryDelay(retryCount int) time.Duration {
+	if retryCount > 6 {
+		retryCount = 6
+	}
+	return time.Duration(1<<retryCount) * time.Second
 }
