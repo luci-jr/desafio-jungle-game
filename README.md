@@ -6,15 +6,41 @@ Serviço financeiro concorrente e distribuído para processamento de apostas de 
 
 ## 🚀 1. Pré-requisitos
 
-- **Go:** versão `1.22+`
+- **Go:** versão `1.26.4` (necessária para executar a API ou os testes fora do Docker)
 - **Docker & Docker Compose:** Docker 24+ com Compose v2+
-- **Utilidades de linha de comando:** `curl`, `jq`, `make` (opcional)
+- **Utilidades de linha de comando:** `curl` e `jq` (opcionais, mas usados nos exemplos)
+
+## ⚡ Início rápido — caminho recomendado
+
+> Antes de começar, confirme que Docker e Docker Compose estão instalados, que
+> há acesso à internet no primeiro build para baixar as imagens e que as portas
+> locais `5432`, `4566`, `8000` e `8080` estão livres. Elas são usadas,
+> respectivamente, por PostgreSQL, LocalStack, API e Keycloak.
+
+Após clonar o repositório, execute:
+
+```bash
+git clone https://github.com/luci-jr/desafio-jungle-game.git
+cd desafio-jungle-game
+docker compose up --build -d
+```
+
+Espere a API e suas dependências ficarem disponíveis:
+
+```bash
+until curl -fsS http://localhost:8000/health/ready; do sleep 2; done
+```
+
+O último comando deve retornar o status `UP`. A API estará disponível em
+`http://localhost:8000`. Consulte as chamadas autenticadas na seção 7.
 
 ---
 
 ## ⚙️ 2. Variáveis de Ambiente (`.env`)
 
-A aplicação lê automaticamente o arquivo `.env` na raiz. Um arquivo de exemplo completo está versionado em [`.env.example`](.env.example):
+O Docker Compose já configura todas as variáveis necessárias para o caminho
+recomendado. Para executar a API nativamente, use o arquivo de exemplo
+versionado [`.env.example`](.env.example):
 
 ```env
 # Aplicação HTTP
@@ -46,29 +72,31 @@ AUTH_JWKS_URL=http://localhost:8080/realms/betting/protocol/openid-connect/certs
 AUTH_ISSUER=http://localhost:8080/realms/betting
 ```
 
-Para gerar seu arquivo local:
+Para gerar e carregar as variáveis no terminal atual:
 ```bash
 cp .env.example .env
+set -a
+source .env
+set +a
 ```
+
+> A aplicação lê variáveis de ambiente do processo. Ela não carrega o arquivo
+> `.env` automaticamente; os comandos acima fazem essa carga no shell.
 
 ---
 
 ## 🐳 3. Execução do Ambiente com Docker Compose
 
-Para subir toda a infraestrutura (PostgreSQL, LocalStack com filas SQS FIFO provisionadas automaticamente e Keycloak com Realm e Clientes importados):
-
+Para subir PostgreSQL, LocalStack, Keycloak e a API conteinerizada:
 ```bash
-docker compose up -d
-```
-
-Caso queira rodar também a API Go conteinerizada:
-```bash
-docker compose up --build
+docker compose up --build -d
 ```
 
 ### Execução Local (Go Nativo)
 Caso prefira executar a aplicação Go diretamente no seu terminal (fora do Docker), mantendo os serviços de infraestrutura (PostgreSQL, LocalStack, Keycloak) em execução via Docker:
 ```bash
+docker compose up -d postgres localstack keycloak
+set -a && source .env && set +a
 go run cmd/api/main.go
 ```
 
@@ -143,7 +171,11 @@ O projeto conta com suíte completa de testes unitários, testes de concorrênci
 Para executar a suíte completa de integração e concorrência que depende de infraestrutura real, suba previamente os containers de apoio:
 ```bash
 docker compose up -d postgres localstack keycloak
+docker compose stop api
 ```
+
+O `stop api` evita que uma API já em execução consuma mensagens SQS destinadas
+aos testes de integração.
 
 ### Comandos de Teste Oficiais (Edital Seção 15):
 ```bash
@@ -225,6 +257,8 @@ suba a infraestrutura e execute estas três instâncias em terminais diferentes:
 
 ```bash
 docker compose up -d postgres localstack keycloak
+
+set -a && source .env && set +a
 
 APP_PORT=8001 go run ./cmd/api
 APP_PORT=8002 go run ./cmd/api
@@ -439,3 +473,21 @@ docker exec -i betting-localstack awslocal sqs send-message \
     }
   }'
 ```
+
+---
+
+## 🧹 9. Encerramento e limpeza do ambiente
+
+Para parar os containers, preservando os dados locais do PostgreSQL:
+
+```bash
+docker compose down
+```
+
+Para remover também os volumes e reiniciar o ambiente do zero:
+
+```bash
+docker compose down -v
+```
+
+> Atenção: `docker compose down -v` apaga os dados locais do banco.
