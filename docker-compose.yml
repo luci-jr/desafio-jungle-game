@@ -71,7 +71,7 @@ services:
       - SQS_DLQ_URL=http://localstack:4566/000000000000/wager-transactions-dlq.fifo
       - SQS_EVENT_QUEUE_URL=http://localstack:4566/000000000000/wager-events.fifo
       - AUTH_JWKS_URL=http://keycloak:8080/realms/betting/protocol/openid-connect/certs
-      - AUTH_ISSUER=http://localhost:8080/realms/betting
+      - AUTH_ISSUER=http://keycloak:8080/realms/betting
     depends_on:
       postgres:
         condition: service_healthy
