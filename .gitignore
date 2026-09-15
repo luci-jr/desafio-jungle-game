@@ -1,0 +1,27 @@
+# 1. Binários compilados do Go (o Go gera executáveis de máquina)                                                             
+    /bin/
+    /dist/
+    *.exe
+    *.exe~
+    *.dll
+    *.so
+    *.dylib
+  
+    # 2. Relatórios de testes e cobertura
+    *.test
+    *.out
+    coverage.html
+  
+    # 3. Senhas e variáveis locais (Segurança máxima: nunca subir senhas pro GitHub)
+    .env
+    .env.local
+  
+    # 4. Configurações de IDEs (VS Code, GoLand, etc.)
+    .idea/
+    .vscode/
+    *.swp
+    *.swo
+  
+    # 5. Lixo de sistema operacional
+    .DS_Store
+    Thumbs.db
