@@ -146,3 +146,23 @@ Este documento detalha formalmente as escolhas de arquitetura, modelagem de dado
 - **Ciclo de Vida (`fx.Lifecycle`):**
   - **OnStart:** Aplica migrations SQL no PostgreSQL, inicia workers assíncronos (SQS Consumer, Outbox Publisher, Pending Reference Worker) em goroutines gerenciadas por context e sobe o servidor HTTP na porta 8000.
   - **OnStop:** Cancela os contextos dos workers assíncronos, encerra o servidor HTTP aguardando a conclusão das requisições ativas (`server.Shutdown`) e fecha o pool de conexões com o PostgreSQL (`pool.Close()`).
+
+---
+
+## 11. Cockpit Web Embutido (`Jungle Slots 1987`), WebAssembly e Entrega Self-Hosted
+
+### 11.1. Distribuição Single-Binary com `//go:embed`
+- **Decisão:** Os artefatos estáticos da interface web (HTML, CSS, JavaScript, áudio e o binário WebAssembly `game.wasm`) são embutidos diretamente dentro do executável compilado de Go utilizando `embed.FS` ([`internal/infrastructure/http/web/ui.go`](internal/infrastructure/http/web/ui.go)).
+- **Racional:** Elimina a necessidade de servidores web externos (como Nginx) para servir o frontend, suprime etapas adicionais de build no ambiente de execução e previne problemas de CORS ou rotas quebradas. Um único container ou binário disponibiliza a API e a interface de testes visual imediatamente em `http://localhost:8000/app/`.
+
+### 11.2. Motor em WebAssembly (Go WASM)
+- O motor de geração e regras probabilísticas do jogo roda em **WebAssembly** compilado diretamente a partir de código Go nativo (`cmd/wasm/main.go`), operando no navegador via `wasm_exec.js`.
+- Demonstra a versatilidade de Go tanto para microserviços de alto rendimento no servidor quanto para binários de execução rápida em client-side.
+
+### 11.3. Otimização Touchscreen & Responsividade Mobile
+- **Touch-Action & Ergonomia:** Interface adaptada para smartphones e tablets com botões que respeitam as zonas de alcance do polegar (touch targets de 44px a 56px), `touch-action: manipulation` para suprimir delays de clique e barra flutuante sticky de navegação rápida entre o Fliperama e a Auditoria.
+- **Haptic Engine:** Integração com a API de vibração (`navigator.vibrate`) para feedback tátil realista em apostas, vitórias e erros no celular.
+
+### 11.4. Racional Técnico: Por que não Vercel / Cloud Serverless?
+- **Incompatibilidade Arquitetural com Serverless:** O desafio exige persistência relacional transacional (PostgreSQL 16 com locks `SELECT ... FOR UPDATE` e triggers PL/pgSQL), autenticação OIDC corporativa (Keycloak 24 com JWKS) e mensageria assíncrona (AWS SQS FIFO com workers contínuos em background). A Vercel opera em paradigma efêmero/serverless, incapaz de hospedar serviços com conexões abertas de longa duração e brokers com polling contínuo.
+- **Autossuficiência Operacional:** A entrega nativa garante que qualquer avaliador clone o repositório e rode a solução com fidelidade máxima localmente via `docker compose up`, sem dependências de credenciais em nuvens de terceiros ou risco de links expirados.

@@ -65,7 +65,8 @@ O último comando deve retornar o status `UP`. A API estará disponível em
 
 Para além da bateria de testes via terminal e Postman, este projeto inclui uma **interface visual completa de cockpit e simulador de apostas** embutida nativamente no binário Go, acessível diretamente no navegador:
 
-👉 **URL de Acesso Local:** [http://localhost:8000/app/](http://localhost:8000/app/) *(ou simplesmente `http://localhost:8000/`, que redireciona automaticamente)*
+👉 **URL de Acesso Local (Desktop):** [http://localhost:8000/app/](http://localhost:8000/app/) *(ou simplesmente `http://localhost:8000/`, que redireciona automaticamente)*  
+📱 **URL de Acesso Mobile (Celular/Tablet na mesma rede Wi-Fi):** `http://<SEU_IP_LOCAL>:8000/app/` *(com suporte touchscreen completo, alvos de toque ergonômicos e vibração háptica)*
 
 ### 🏛️ Ambientação & Arquitetura Visual
 Com visual temático retrô anos 80 inspirado no lendário **Fliperama do Ver-o-Peso (Belém do Pará)**, a interface traz elementos culturais amazônicos (Açaí 🫐, Filhote frito 🐟, Manga da Presidente Vargas 🥭, Castanha-do-Pará 🌰, Onça-Pintada 🐆 e Muiraquitã Sagrado 💎) com efeitos de áudio *chiptune* sintetizados nativamente via Web Audio API.
