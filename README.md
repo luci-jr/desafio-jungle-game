@@ -1,11 +1,14 @@
 # 🎲 Desafio Backend — Processamento Distribuído de Apostas em Go
 
-> ### 🏆 Desafio Técnico — Jungle Gaming (Backend Developer - Go)
-> Este projeto consiste na resolução prática do desafio técnico para a vaga de **Backend Developer - Go** na [Jungle Gaming](https://junglegaming.io/pt), recebido após aprovação na etapa de entrevista técnica via comunicado oficial de Alison Dias (`alisondias@team.junglegaming.io`) em 14 de setembro de 2026.
+> ### 🏆 Desafio Técnico — Jungle Gaming (Backend Developer Júnior - Go)
+> Este projeto consiste na resolução prática do desafio técnico para a vaga de **Backend Developer Júnior (Go)** na [Jungle Gaming](https://junglegaming.io/pt) (Sistemas Financeiros Concorrentes & iGaming / Sportsbook).
 > 
-> - **Repositório Oficial do Desafio:** [junglegaming/backend-challenge-go](https://github.com/junglegaming/backend-challenge-go)
 > - **Candidato:** Lucivaldo Junior
-> - **Prazo de Conclusão:** 3 dias
+> - **Nível da Vaga:** Backend Developer Júnior (Go)
+> - **Data da Proposta:** 14 de setembro de 2026
+> - **Prazo Proposto:** 3 dias corridos (Data limite: 17 de setembro de 2026)
+> - **Data de Entrega:** 16 de setembro de 2026 (Entrega antecipada com 24h de antecedência)
+> - **Repositório Oficial do Desafio:** [junglegaming/backend-challenge-go](https://github.com/junglegaming/backend-challenge-go)
 > - **Stack Tecnológica:** Go 1.26.4, Uber Fx, PostgreSQL 16 (ACID, Row-Level Locking e Triggers de Imutabilidade), AWS SQS FIFO (LocalStack com DLQ e Deduplicação), Keycloak 24 (OIDC OAuth 2.0 / RS256 JWKS), WebAssembly (Go WASM) e Web Cockpit Retrô.
 
 Serviço financeiro concorrente e distribuído para processamento de apostas de provedores de jogos (*iGaming / Sportsbook*). Desenvolvido em **Go 1.26.4**, composto com **Uber Fx**, com persistência relacional ACID em **PostgreSQL 16**, mensageria assíncrona **AWS SQS FIFO** via **LocalStack**, e autenticação OIDC via **Keycloak**.
@@ -65,9 +68,8 @@ O último comando deve retornar o status `UP`. A API estará disponível em
 
 Para além da bateria de testes via terminal e Postman, este projeto inclui uma **interface visual completa de cockpit e simulador de apostas** embutida nativamente no binário Go, acessível tanto localmente quanto na nuvem para exibição de portfólio:
 
-👉 **Demonstração Online na Vercel (Portfólio Interativo):** [https://jungle-slots-1987.vercel.app](https://jungle-slots-1987.vercel.app) *(com motor WebAssembly, sons 8-bit, simulação de ledger e idempotência in-browser)*  
-🖥️ **URL de Acesso Local (Docker / Go Engine Completa):** [http://localhost:8000/app/](http://localhost:8000/app/) *(ou simplesmente `http://localhost:8000/`, que redireciona automaticamente)*  
-📱 **URL de Acesso Mobile (Celular/Tablet na mesma rede Wi-Fi):** `http://<SEU_IP_LOCAL>:8000/app/` *(com suporte touchscreen completo, alvos de toque ergonômicos e vibração háptica)*
+👉 **Demonstração Online na Vercel (Portfólio Interativo — Desktop & Mobile):** [https://jungle-slots-1987.vercel.app](https://jungle-slots-1987.vercel.app) *(acessível tanto no navegador desktop quanto mobile, com motor WebAssembly, sons 8-bit, suporte touchscreen e idempotência in-browser)*  
+🖥️ **URL de Acesso Local (Docker / Go Engine Completa):** [http://localhost:8000/app/](http://localhost:8000/app/) *(ou simplesmente `http://localhost:8000/`, que redireciona automaticamente)*
 
 ### 📸 Galeria Visual do Cockpit & Simulador de Apostas
 
