@@ -63,10 +63,40 @@ O último comando deve retornar o status `UP`. A API estará disponível em
 
 ## 🎮 2. Jungle Slots 1987 — Cockpit Arcade & Simulador Visual da Engine
 
-Para além da bateria de testes via terminal e Postman, este projeto inclui uma **interface visual completa de cockpit e simulador de apostas** embutida nativamente no binário Go, acessível diretamente no navegador:
+Para além da bateria de testes via terminal e Postman, este projeto inclui uma **interface visual completa de cockpit e simulador de apostas** embutida nativamente no binário Go, acessível tanto localmente quanto na nuvem para exibição de portfólio:
 
-👉 **URL de Acesso Local (Desktop):** [http://localhost:8000/app/](http://localhost:8000/app/) *(ou simplesmente `http://localhost:8000/`, que redireciona automaticamente)*  
+👉 **Demonstração Online na Vercel (Portfólio Interativo):** [https://jungle-slots-1987.vercel.app](https://jungle-slots-1987.vercel.app) *(com motor WebAssembly, sons 8-bit, simulação de ledger e idempotência in-browser)*  
+🖥️ **URL de Acesso Local (Docker / Go Engine Completa):** [http://localhost:8000/app/](http://localhost:8000/app/) *(ou simplesmente `http://localhost:8000/`, que redireciona automaticamente)*  
 📱 **URL de Acesso Mobile (Celular/Tablet na mesma rede Wi-Fi):** `http://<SEU_IP_LOCAL>:8000/app/` *(com suporte touchscreen completo, alvos de toque ergonômicos e vibração háptica)*
+
+### 📸 Galeria Visual do Cockpit & Simulador de Apostas
+
+<p align="center">
+  <img src="docs/screenshots/cockpit_desktop.png" alt="Cockpit Jungle Slots 1987 Desktop" width="850">
+  <br>
+  <em>Figura 1: Cockpit Desktop Retro Arcade 1987 — Máquina de slots Ver-o-Peso, painel de controle e terminal CRT de telemetria em tempo real.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/cockpit_reconcile.png" alt="Auditoria Matemática e Livro-Razão" width="850">
+  <br>
+  <em>Figura 2: Aba de Reconciliação Contábil — Prova matemática instantânea e auditoria imutável do Livro-Razão (Ledger).</em>
+</p>
+
+<table align="center">
+  <tr>
+    <td align="center" width="42%">
+      <img src="docs/screenshots/cockpit_mobile.png" alt="Cockpit Mobile Touchscreen" width="340">
+      <br>
+      <em>Figura 3: Responsividade Mobile Touchscreen (iPhone/Android com vibração háptica).</em>
+    </td>
+    <td align="center" width="58%">
+      <img src="docs/screenshots/cockpit_unhappy.png" alt="Laboratório de Unhappy Paths" width="470">
+      <br>
+      <em>Figura 4: Laboratório de Casos de Borda e Erros de Domínio em tempo real.</em>
+    </td>
+  </tr>
+</table>
 
 ### 🏛️ Ambientação & Arquitetura Visual
 Com visual temático retrô anos 80 inspirado no lendário **Fliperama do Ver-o-Peso (Belém do Pará)**, a interface traz elementos culturais amazônicos (Açaí 🫐, Filhote frito 🐟, Manga da Presidente Vargas 🥭, Castanha-do-Pará 🌰, Onça-Pintada 🐆 e Muiraquitã Sagrado 💎) com efeitos de áudio *chiptune* sintetizados nativamente via Web Audio API.
@@ -107,9 +137,9 @@ A resposta técnica envolve a **natureza arquitetural da solução**:
 1. **A Vercel é voltada a Frontends Estáticos e Funções Serverless:**
    - A plataforma Vercel foi concebida para páginas estáticas (HTML/CSS/JS) e Serverless Functions efêmeras (Node.js/Edge).
    - Ela **não suporta execução contínua de containers Stateful Docker** (PostgreSQL 16 com triggers e locks transacionais, LocalStack emulando AWS SQS FIFO com workers em loop constante, e Keycloak 24 como Identity Provider).
-2. **Forte Acoplamento com o Backend Stateful:**
-   - O jogo `Jungle Slots 1987` não é uma aplicação puramente cliente com dados falsos (*mock*). Ele depende diretamente das rotas transacionais `/wallets`, `/wagering/transactions`, `/app/api/tokens` e do PostgreSQL para demonstrar concorrência real, idempotência e imutabilidade do ledger.
-   - Fazer o deploy exclusivo do frontend na Vercel faria com que todas as requisições quebrassem (`Connection Refused` ou erro de CORS), a menos que toda a infraestrutura backend (Postgres, Keycloak, SQS e API Go) fosse previamente implantada em uma nuvem pública (AWS ECS, Fly.io ou Render) com domínios públicos e certificados SSL.
+2. **Duplo Modo Operacional: Local Stateful vs. Portfólio Vercel:**
+   - **No ambiente local / Docker:** A aplicação conecta-se à engine Go completa (`SELECT ... FOR UPDATE`, PostgreSQL, Keycloak OIDC, fila SQS FIFO e reconciliação nativa em SQL).
+   - **No ambiente Vercel ([jungle-slots-1987.vercel.app](https://jungle-slots-1987.vercel.app)):** O cockpit detecta automaticamente o ambiente serverless e ativa o **Modo Demonstração Portfólio**, emulando a transacionalidade contábil, livro-razão no cliente, replays de idempotência e reconciliação matemática via client-side state machine, permitindo que qualquer recrutador ou visitante interaja com o fliperama sem necessidade de infraestrutura de banco de dados externa.
 3. **A Decisão Arquitetural Sênior (Single-Binary Self-Hosted com `//go:embed`):**
    - Optamos pelo padrão ouro do ecossistema Go corporativo: embutir todos os artefatos estáticos (HTML, CSS, JS e o binário WebAssembly `game.wasm`) diretamente dentro do binário compilado da API Go através da diretiva `//go:embed static` ([`internal/infrastructure/http/web/ui.go`](internal/infrastructure/http/web/ui.go)).
    - **Vantagem para o Avaliador:** Quem clona o repositório e sobe o Docker Compose tem a **solução 100% operacional no ar em segundos**, sem dependência de nuvens externas de terceiros, sem risco de expiração de links, com latência zero e suporte completo *offline-first*.

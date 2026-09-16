@@ -1,0 +1,8 @@
+# Vercel Ignore File
+api
+bin/
+dist/
+SUPER_MANUAL_APRENDIZADO.md
+.git
+.github
+docs/screenshots
