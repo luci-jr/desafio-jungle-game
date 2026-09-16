@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Jungle Slots 1987 — Arcade & Betting Engine Cockpit</title>
   
   <!-- Modern Retro Crisp Fonts -->
@@ -14,7 +14,7 @@
   <link rel="icon" type="image/png" href="/app/favicon.png?v=20260916">
   <link rel="apple-touch-icon" href="/app/favicon.png?v=20260916">
 
-  <link rel="stylesheet" href="/app/app.css?v=20260916_v7">
+  <link rel="stylesheet" href="/app/app.css?v=20260916_mobile_v8">
 </head>
 <body>
   <!-- Top Retro Marquee Bar -->
@@ -66,9 +66,19 @@
       <span class="bulb"></span><span class="bulb"></span><span class="bulb"></span>
     </div>
   </header>
-
-  <!-- Main Viewport: Two Columns -->
-  <main class="arcade-cabinet-container">
+ 
+   <!-- Mobile Floating Quick Switcher (Visível em Celulares e Tablets) -->
+   <nav class="mobile-section-nav" id="mobile-section-nav">
+     <button class="mobile-nav-btn active" id="btn-nav-cabinet" onclick="if(window.scrollToSectionGo) window.scrollToSectionGo('slot-cabinet')">
+       🎰 1. FLIPERAMA
+     </button>
+     <button class="mobile-nav-btn" id="btn-nav-cockpit" onclick="if(window.scrollToSectionGo) window.scrollToSectionGo('cockpit-terminal')">
+       🖥️ 2. AUDITORIA & LOGS
+     </button>
+   </nav>
+ 
+   <!-- Main Viewport: Two Columns -->
+   <main class="arcade-cabinet-container">
     
     <!-- LEFT: RETRO SLOT MACHINE CABINET -->
     <section class="slot-cabinet" id="slot-cabinet">

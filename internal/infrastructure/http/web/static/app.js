@@ -78,9 +78,71 @@ function playTone(freq, type, duration, delay = 0, gainLevel = 0.1) {
   }
 }
 
-// 8-bit Sound Effects
+// =============================================================================
+// TOUCH & HAPTIC VIBRATION ENGINE (MOBILE OPTIMIZATION)
+// =============================================================================
+function triggerHaptic(type = 'light') {
+  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+    try {
+      if (type === 'light') navigator.vibrate(18);
+      else if (type === 'medium') navigator.vibrate(35);
+      else if (type === 'win') navigator.vibrate([40, 50, 80, 50, 120]);
+      else if (type === 'error') navigator.vibrate([50, 50, 50]);
+    } catch (e) {
+      // Ignora restrições do navegador para vibração
+    }
+  }
+}
+
+window.scrollToSectionGo = function (sectionId) {
+  triggerHaptic('light');
+  const target = document.getElementById(sectionId);
+  if (target) {
+    const navBar = document.getElementById('mobile-section-nav');
+    const navHeight = navBar ? navBar.offsetHeight : 0;
+    const targetPos = target.getBoundingClientRect().top + window.pageYOffset - navHeight - 10;
+    window.scrollTo({ top: targetPos, behavior: 'smooth' });
+
+    const btnCabinet = document.getElementById('btn-nav-cabinet');
+    const btnCockpit = document.getElementById('btn-nav-cockpit');
+    if (btnCabinet && btnCockpit) {
+      if (sectionId === 'slot-cabinet') {
+        btnCabinet.classList.add('active');
+        btnCockpit.classList.remove('active');
+      } else {
+        btnCockpit.classList.add('active');
+        btnCabinet.classList.remove('active');
+      }
+    }
+  }
+};
+
+function setupMobileNavObserver() {
+  const cabinet = document.getElementById('slot-cabinet');
+  const cockpit = document.getElementById('cockpit-terminal');
+  const btnCabinet = document.getElementById('btn-nav-cabinet');
+  const btnCockpit = document.getElementById('btn-nav-cockpit');
+
+  if (!cabinet || !cockpit || !btnCabinet || !btnCockpit) return;
+
+  const updateActiveNav = () => {
+    const cockpitRect = cockpit.getBoundingClientRect();
+    if (cockpitRect.top <= 250) {
+      btnCockpit.classList.add('active');
+      btnCabinet.classList.remove('active');
+    } else {
+      btnCabinet.classList.add('active');
+      btnCockpit.classList.remove('active');
+    }
+  };
+
+  window.addEventListener('scroll', updateActiveNav, { passive: true });
+}
+
+// 8-bit Sound Effects with Haptic Feedback
 const SFX = {
   coin() {
+    triggerHaptic('light');
     playTone(987.77, 'square', 0.08, 0, 0.12);
     playTone(1318.51, 'square', 0.28, 0.08, 0.12);
   },
@@ -88,25 +150,30 @@ const SFX = {
     playTone(180, 'triangle', 0.03, 0, 0.08);
   },
   reelStop() {
+    triggerHaptic('light');
     playTone(120, 'square', 0.08, 0, 0.15);
   },
   win() {
+    triggerHaptic('win');
     playTone(523.25, 'square', 0.1, 0, 0.15); // C5
     playTone(659.25, 'square', 0.1, 0.08, 0.15); // E5
     playTone(783.99, 'square', 0.1, 0.16, 0.15); // G5
     playTone(1046.5, 'square', 0.35, 0.24, 0.18); // C6
   },
   jackpot() {
+    triggerHaptic('win');
     const notes = [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5, 1318.51];
     notes.forEach((freq, idx) => {
       playTone(freq, 'square', 0.12, idx * 0.09, 0.15);
     });
   },
   error() {
+    triggerHaptic('error');
     playTone(160, 'sawtooth', 0.15, 0, 0.2);
     playTone(110, 'sawtooth', 0.25, 0.12, 0.2);
   },
   buttonClick() {
+    triggerHaptic('light');
     playTone(440, 'triangle', 0.04, 0, 0.08);
   },
 };
@@ -1155,6 +1222,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Initial Boot
+  setupMobileNavObserver();
   await fetchTokens();
   await checkHealth();
   await initPlayerWallet(false);

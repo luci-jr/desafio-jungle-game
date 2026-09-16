@@ -30,6 +30,21 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+button, input, select, textarea {
+  touch-action: manipulation;
+  font-family: inherit;
+}
+
+/* Mobile Section Switcher Nav (Desktop: Hidden) */
+.mobile-section-nav {
+  display: none;
 }
 
 body {
@@ -1451,3 +1466,402 @@ body {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* ==========================================================================
+   MOBILE & TOUCHSCREEN RESPONSIVE ARCHITECTURE
+   ========================================================================== */
+
+/* Touch-optimized tactile feedback on interactive buttons */
+.chip-btn, .arcade-btn, .btn-retro-action, .btn-retro-mini, .tab-btn, .mobile-nav-btn {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.chip-btn:active, .arcade-btn:active:not(:disabled), .btn-retro-action:active, .mobile-nav-btn:active {
+  transform: scale(0.97);
+}
+
+@media (max-width: 1024px) {
+  .arcade-cabinet-container {
+    grid-template-columns: 1fr;
+    width: calc(100% - 20px);
+    margin: 8px auto 16px;
+    gap: 16px;
+  }
+}
+
+@media (max-width: 900px) {
+  /* Sticky Mobile Quick Navigation Bar */
+  .mobile-section-nav {
+    display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 999;
+    background: #090f17;
+    border-bottom: 2px solid #22c55e;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.8);
+    padding: 6px 10px;
+    gap: 8px;
+  }
+
+  .mobile-nav-btn {
+    flex: 1;
+    background: #111822;
+    border: 1px solid #28364a;
+    color: #94a3b8;
+    font-family: var(--font-title);
+    font-size: 0.84rem;
+    font-weight: 800;
+    padding: 10px 12px;
+    min-height: 44px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .mobile-nav-btn.active {
+    background: linear-gradient(180deg, #15803d 0%, #166534 100%);
+    border-color: #22c55e;
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+  }
+
+  /* Header adjustments */
+  .marquee-content {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .arcade-title {
+    align-items: center;
+    text-align: center;
+  }
+
+  .title-with-mascot {
+    justify-content: center;
+  }
+
+  .arcade-status-panel {
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px 8px;
+  }
+
+  .status-indicator {
+    font-size: 0.72rem;
+  }
+
+  /* Payout Legend responsive grid */
+  .payout-legend {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+  }
+
+  /* Ledger Table smooth horizontal scrolling on touch */
+  .ledger-table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-height: 250px;
+  }
+
+  .retro-table {
+    min-width: 600px;
+  }
+}
+
+@media (max-width: 640px) {
+  body {
+    font-size: 14px;
+  }
+
+  .arcade-cabinet-container {
+    width: 100%;
+    padding: 0 8px;
+    margin: 6px 0 12px;
+    gap: 12px;
+  }
+
+  .title-main {
+    font-size: 1.15rem;
+  }
+
+  .title-sub {
+    font-size: 0.62rem;
+  }
+
+  .header-mascot {
+    width: 30px;
+    height: 30px;
+  }
+
+  /* Cabinet Bezel */
+  .cabinet-bezel {
+    padding: 10px 8px;
+    gap: 8px;
+  }
+
+  /* Scoreboard */
+  .digital-scoreboard {
+    gap: 4px;
+  }
+
+  .score-card {
+    padding: 4px 4px;
+  }
+
+  .score-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.2px;
+  }
+
+  .led-display {
+    font-size: 1.15rem;
+  }
+
+  /* Reels */
+  .slot-screen-frame {
+    padding: 4px;
+  }
+
+  .reel-column {
+    height: 75px;
+  }
+
+  .reel-cell {
+    height: 75px;
+    line-height: 75px;
+    font-size: 2.2rem;
+  }
+
+  .slot-payline-marker {
+    font-size: 0.9rem;
+    padding: 0 2px;
+  }
+
+  /* Payout table on small screens */
+  .payout-legend {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 3px;
+    padding: 4px;
+  }
+
+  .pay-item {
+    font-size: 0.64rem;
+  }
+
+  .pay-item .sym {
+    font-size: 0.85rem;
+  }
+
+  /* Chips row */
+  .chips-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+  }
+
+  .chip-btn {
+    padding: 8px 6px;
+    min-height: 48px;
+    font-size: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .custom-bet-input {
+    grid-column: span 2;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  /* Push Buttons Deck */
+  .arcade-buttons-deck {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .btn-spin {
+    width: 100%;
+    min-height: 56px;
+  }
+
+  .btn-spin .btn-top {
+    font-size: 1.15rem;
+    padding: 14px;
+  }
+
+  .sub-buttons-group {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .sub-buttons-group .arcade-btn {
+    flex: 1;
+    min-height: 48px;
+  }
+
+  .sub-buttons-group .arcade-btn .btn-top {
+    font-size: 0.78rem;
+    padding: 10px 4px;
+    text-align: center;
+  }
+
+  /* Wallet Actions Deck */
+  .wallet-actions-deck {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .wallet-buttons-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 4px;
+  }
+
+  .btn-retro-action {
+    padding: 8px 4px;
+    font-size: 0.74rem;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .wallet-meta {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+  }
+
+  .meta-val {
+    max-width: 170px;
+  }
+
+  /* Guide */
+  .how-to-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  /* Cockpit & Terminal */
+  .terminal-bezel {
+    padding: 8px;
+  }
+
+  .terminal-screen-header {
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .terminal-header-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .terminal-title {
+    font-size: 0.85rem;
+  }
+
+  .terminal-header-sub {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .provider-switch {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .jwt-badge-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .terminal-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .tab-btn {
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    min-height: 44px;
+    font-size: 0.78rem;
+  }
+
+  /* Unhappy Path Lab */
+  .unhappy-buttons-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .btn-error-test {
+    padding: 10px;
+    min-height: 52px;
+  }
+
+  /* Modals on mobile */
+  .retro-modal {
+    padding: 10px;
+  }
+
+  .modal-box {
+    width: 100%;
+    max-width: 100%;
+    padding: 14px;
+    max-height: 92vh;
+    overflow-y: auto;
+  }
+
+  .modal-title {
+    font-size: 1.05rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .title-main {
+    font-size: 1rem;
+  }
+
+  .led-display {
+    font-size: 1rem;
+  }
+
+  .reel-column {
+    height: 65px;
+  }
+
+  .reel-cell {
+    height: 65px;
+    line-height: 65px;
+    font-size: 1.8rem;
+  }
+
+  .btn-spin .btn-top {
+    font-size: 1rem;
+  }
+}
+
