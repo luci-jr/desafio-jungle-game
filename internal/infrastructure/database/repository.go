@@ -163,18 +163,18 @@ func (r *Repository) CreateLedgerEntry(ctx context.Context, tx pgx.Tx, entry *do
 
 // LedgerItemDTO é o registro retornado na consulta paginada do ledger.
 type LedgerItemDTO struct {
-	ID                       string    `json:"id"`
-	WalletID                 string    `json:"walletId"`
-	TransactionID            string    `json:"transactionId"`
-	Kind                     string    `json:"kind"`
-	Direction                string    `json:"direction"`
-	Amount                   string    `json:"amount"`
-	Currency                 string    `json:"currency"`
-	BalanceBefore            string    `json:"balanceBefore"`
-	BalanceAfter             string    `json:"balanceAfter"`
-	ExternalTransactionID    string    `json:"externalTransactionId,omitempty"`
-	ReferenceExternalID      string    `json:"referenceExternalTransactionId,omitempty"`
-	CreatedAt                time.Time `json:"createdAt"`
+	ID                    string    `json:"id"`
+	WalletID              string    `json:"walletId"`
+	TransactionID         string    `json:"transactionId"`
+	Kind                  string    `json:"kind"`
+	Direction             string    `json:"direction"`
+	Amount                string    `json:"amount"`
+	Currency              string    `json:"currency"`
+	BalanceBefore         string    `json:"balanceBefore"`
+	BalanceAfter          string    `json:"balanceAfter"`
+	ExternalTransactionID string    `json:"externalTransactionId,omitempty"`
+	ReferenceExternalID   string    `json:"referenceExternalTransactionId,omitempty"`
+	CreatedAt             time.Time `json:"createdAt"`
 }
 
 // GetLedgerEntries consulta lançamentos com paginação estável por cursor (timestamp/id).

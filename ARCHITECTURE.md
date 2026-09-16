@@ -171,3 +171,40 @@ Este documento detalha formalmente as escolhas de arquitetura, modelagem de dado
   - Para permitir que recrutadores, gestores e a comunidade acessem a experiência interativa em qualquer dispositivo móvel ou desktop sem precisar instalar Docker localmente, o cockpit possui detecção automática de ambiente.
   - Ao rodar na Vercel, o binário WebAssembly (`game.wasm`) ativa o **Modo Demonstração Portfólio**: executa toda a lógica probabilística, livro-razão contábil, replay idempotente e prova de reconciliação matemática diretamente em memória via máquina de estados compilada em Go.
   - Isso une o melhor de dois mundos: fidelidade transacional corporativa máxima na máquina do recrutador e vitrine viva de portfólio acessível globalmente.
+
+---
+
+## 12. Interpretações Adotadas, Limitações e Trabalho Futuro / Não Concluído
+
+Em estrita conformidade com os requisitos de entrega da Seção 15 do edital (*"Explicite limitações, interpretações adotadas e trabalho não concluído"*), este capítulo formaliza as decisões de contorno, hipóteses de projeto e o roadmap de evolução técnica da solução.
+
+### 12.1. Interpretações Adotadas
+1. **Moeda e Operação em BRL:**
+   - O value object `domain.Money` foi projetado com suporte a qualquer código de moeda alfabético de 3 letras da norma ISO 4217, possuindo validações e testes unitários de incompatibilidade em operações aritméticas entre moedas distintas.
+   - Para os fluxos de integração e cenários principais de aposta do edital, adotou-se o Real Brasileiro (`BRL`) como moeda padrão do ambiente de testes e da carteira inicial.
+2. **Resolução de `PENDING_REFERENCE` e TTL de Expiração:**
+   - Quando uma reversão (`REFUND` ou `ROLLBACK`) chega antes da aposta que ela referencia, o sistema persiste o registro em estado `PENDING_REFERENCE` e publica o evento correspondente na Outbox.
+   - Fixou-se a estratégia de resolução com TTL de 60 segundos (ou até 5 ciclos de retry do worker assíncrono com backoff exponencial). Esgotado esse prazo sem a chegada da transação referenciada, a operação é finalizada como `REJECTED` com o código estável `REFERENCE_NOT_FOUND` e produz o evento `WagerTransactionRejected`.
+3. **Normalização e Hash Determinístico de Idempotência:**
+   - O cálculo do hash SHA-256 é restrito aos campos semânticos de negócio: `(providerId, externalTransactionId, playerId, walletId, roundId, gameId, kind, amount, currency, referenceExternalTransactionId)`.
+   - Headers de transporte (como `User-Agent`, `Authorization`, `X-Forwarded-For`) e IDs de mensagem de transporte do broker foram intencionalmente excluídos do hash. Essa interpretação garante que a mesma intenção de negócio, seja enviada via HTTP ou via SQS FIFO, gere rigorosamente o mesmo hash e impeça duplicações ou detecte conflitos (`409 Conflict`).
+4. **Fechamento Síncrono de Operações sem Dependências:**
+   - Para operações sem referências externas pendentes (`BET`, `WIN`, `LOSS`), o processamento e o commit do estado terminal (`PROCESSED` ou `REJECTED`) ocorrem de forma atômica e síncrona dentro da mesma transação SQL, sem necessidade de um commit intermediário de aceite prévio, otimizando o throughput do banco.
+
+### 12.2. Limitações da Solução Atual
+1. **Emulação Local de Mensageria (LocalStack):**
+   - No ambiente de desenvolvimento e testes autossuficiente via Docker Compose, o AWS SQS FIFO é emulado através do LocalStack 3.7. Embora atenda a todas as semânticas de filas FIFO (`.fifo`), grupos de mensagens (`MessageGroupId`) e deduplicação (`MessageDeduplicationId`), as garantias de latência e escalabilidade massiva de conexões dependem do container emulado no host em vez dos clusters globais gerenciados da AWS.
+2. **Ausência de Módulo de Conversão Cambial Dinâmica (Forex):**
+   - O sistema bloqueia movimentações financeiras cuja moeda seja diferente da moeda da carteira (retornando `HTTP 422 Unprocessable Entity`). Não há conversão cambial em tempo real entre diferentes moedas, mantendo a responsabilidade de conversão com o provedor externo antes da submissão da transação.
+3. **Retenção e Crescimento da Tabela de Inbox:**
+   - A tabela `inbox_messages` é append-only para auditoria e deduplicação estrita de consumo SQS. Para operação contínua de longo prazo em produção corporativa de alta escala, é recomendada a introdução de uma rotina de particionamento mensal de tabela (*table partitioning*) ou job de expurgo após o período máximo de retenção de mensagens do SQS (14 dias).
+
+### 12.3. Trabalho Futuro e Extensões Opcionais (Diferenciais do Edital)
+1. **Distributed Tracing com OpenTelemetry (OTel):**
+   - A aplicação atualmente produz logs JSON estruturados com todos os identificadores de correlação (`correlationId`, `messageId`, `transactionId`, `walletId`, `providerId`) e health checks `/health/live` e `/health/ready`.
+   - Como evolução opcional descrita no edital, pode ser adicionado o SDK do OpenTelemetry com exportador OTLP para rastreamento distribuído de spans entre HTTP, workers e banco via Jaeger/Tempo.
+2. **Contabilidade em Partidas Dobradas (Double-Entry Ledger):**
+   - O livro-razão atual utiliza modelo append-only imutável com prova matemática de reconciliação contábil (`POST /wallets/{walletId}/reconciliation`), suficiente para auditar o saldo do jogador.
+   - Um trabalho complementar futuro é expandir o schema para partidas dobradas clássicas, debitando a conta do jogador e creditando simultaneamente a conta de contrapartida da casa/provedor (*House Account*).
+3. **Métricas Avançadas em Formato Prometheus:**
+   - Exposição de um endpoint `/metrics` formatado para scraping do Prometheus, com percentis de latência (p50, p95, p99), histogramas de contenda de locks e medidores de atraso de publicação da outbox (*outbox lag*).
