@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jungle Slots 1987 — Arcade & Betting Engine Cockpit</title>
+  
+  <!-- Modern Retro Crisp Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="/app/favicon.png?v=20260916">
+  <link rel="apple-touch-icon" href="/app/favicon.png?v=20260916">
+
+  <link rel="stylesheet" href="/app/app.css?v=20260916_v7">
+</head>
+<body>
+  <!-- Top Retro Marquee Bar -->
+  <header class="retro-header">
+    <div class="marquee-border">
+      <span class="bulb"></span><span class="bulb"></span><span class="bulb"></span>
+      <span class="bulb"></span><span class="bulb"></span><span class="bulb"></span>
+      <span class="bulb"></span><span class="bulb"></span><span class="bulb"></span>
+    </div>
+    
+    <div class="marquee-content">
+      <div class="arcade-title">
+        <div class="title-with-mascot">
+          <img src="/app/favicon.png" alt="Mascote Nerd Monkey" class="header-mascot">
+          <div class="title-text-group">
+            <span class="title-sub">★ FLIPERAMA DO VER-O-PESO • BELÉM DO PARÁ ★</span>
+            <h1 class="title-main">JUNGLE SLOTS</h1>
+          </div>
+        </div>
+        <span class="title-badge">EDIÇÃO BELÉM // PARÁ ARCADE 1987</span>
+      </div>
+
+      <div class="arcade-status-panel">
+        <div class="status-indicator" id="status-auth">
+          <span class="dot dot-green" id="dot-auth"></span>
+          <span class="label">AUTH: <strong id="lbl-auth-status" style="color: #38bdf8;">KEYCLOAK JWT</strong></span>
+        </div>
+        <div class="status-indicator" id="status-backend">
+          <span class="dot dot-green"></span>
+          <span class="label">API: <strong id="lbl-api-status">ONLINE</strong></span>
+        </div>
+        <div class="status-indicator" id="status-db">
+          <span class="dot dot-green"></span>
+          <span class="label">PG: <strong id="lbl-db-status">CONNECTED</strong></span>
+        </div>
+        <div class="status-indicator" id="status-sqs">
+          <span class="dot dot-green"></span>
+          <span class="label">SQS: <strong id="lbl-sqs-status">FIFO UP</strong></span>
+        </div>
+        <div class="header-controls">
+          <button id="btn-toggle-sound" class="btn-retro-mini" title="Ligar/Desligar Áudio Chiptune">🔊 SFX: ON</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="marquee-border bottom">
+      <span class="bulb"></span><span class="bulb"></span><span class="bulb"></span>
+      <span class="bulb"></span><span class="bulb"></span><span class="bulb"></span>
+      <span class="bulb"></span><span class="bulb"></span><span class="bulb"></span>
+    </div>
+  </header>
+
+  <!-- Main Viewport: Two Columns -->
+  <main class="arcade-cabinet-container">
+    
+    <!-- LEFT: RETRO SLOT MACHINE CABINET -->
+    <section class="slot-cabinet" id="slot-cabinet">
+      <div class="cabinet-bezel">
+        
+        <!-- Score & Balance LED Display -->
+        <div class="digital-scoreboard">
+          <div class="score-card">
+            <span class="score-label">SALDO DISPONÍVEL</span>
+            <div class="led-display led-gold" id="disp-balance">R$ 500.00</div>
+          </div>
+          <div class="score-card">
+            <span class="score-label">ÚLTIMO PRÊMIO</span>
+            <div class="led-display led-green" id="disp-last-win">R$ 0.00</div>
+          </div>
+          <div class="score-card">
+            <span class="score-label">APOSTA ATUAL</span>
+            <div class="led-display led-red" id="disp-current-bet">R$ 50.00</div>
+          </div>
+        </div>
+
+        <!-- 3-Reel Slot Window -->
+        <div class="slot-screen-frame">
+          <div class="slot-payline-marker left">▶</div>
+          <div class="reels-wrapper" id="reels-wrapper">
+            <!-- Reel 1 -->
+            <div class="reel-column" id="reel-1">
+              <div class="reel-strip" id="strip-1">
+                <div class="reel-cell symbol-acai">🫐</div>
+              </div>
+            </div>
+            <!-- Reel 2 -->
+            <div class="reel-column" id="reel-2">
+              <div class="reel-strip" id="strip-2">
+                <div class="reel-cell symbol-filhote">🐟</div>
+              </div>
+            </div>
+            <!-- Reel 3 -->
+            <div class="reel-column" id="reel-3">
+              <div class="reel-strip" id="strip-3">
+                <div class="reel-cell symbol-manga">🥭</div>
+              </div>
+            </div>
+          </div>
+          <div class="slot-payline-marker right">◀</div>
+        </div>
+
+        <!-- Machine Message Ticker -->
+        <div class="machine-ticker" id="machine-ticker">
+          <span class="ticker-text" id="ticker-text">★ ÉGUA DO JOGO, MANO! BOTA TUA FICHA E RODA O CARIMBÓ! ★</span>
+        </div>
+
+        <!-- Payout Table Legend -->
+        <div class="payout-legend">
+          <div class="pay-item" title="Muiraquitã Sagrado da Amazônia"><span class="sym">💎💎💎</span> <strong>20x</strong> <small>(Muiraquitã)</small></div>
+          <div class="pay-item" title="Tigela de Açaí Grosso do Pará"><span class="sym">🫐🫐🫐</span> <strong>15x</strong> <small>(Açaí)</small></div>
+          <div class="pay-item" title="Filhote Frito do Ver-o-Peso"><span class="sym">🐟🐟🐟</span> <strong>8x</strong> <small>(Filhote)</small></div>
+          <div class="pay-item" title="Manga da Presidente Vargas"><span class="sym">🥭🥭🥭</span> <strong>5x</strong> <small>(Manga)</small></div>
+          <div class="pay-item" title="Castanha-do-Pará Selecionada"><span class="sym">🌰🌰🌰</span> <strong>3x</strong> <small>(Castanha)</small></div>
+          <div class="pay-item" title="Onça-Pintada do Marajó"><span class="sym">🐆🐆🐆</span> <strong>2x</strong> <small>(Onça)</small></div>
+          <div class="pay-item" title="Dois símbolos iguais"><span class="sym">2 IGUAIS</span> <strong>1.1x</strong> <small>(Pai d'égua!)</small></div>
+        </div>
+
+        <!-- Bet Selection Controls -->
+        <div class="bet-controls-panel">
+          <span class="panel-tag">SELECIONE O VALOR DA APOSTA:</span>
+          <div class="chips-row">
+            <button class="chip-btn" data-val="10.00">R$ 10 <small>Pupunha</small></button>
+            <button class="chip-btn" data-val="25.00">R$ 25 <small>Castanha</small></button>
+            <button class="chip-btn active" data-val="50.00">R$ 50 <small>Manga</small></button>
+            <button class="chip-btn" data-val="100.00">R$ 100 <small>Açaí</small></button>
+            <div class="custom-bet-input">
+              <span>R$</span>
+              <input type="number" id="input-custom-bet" value="50.00" step="5" min="1" max="1000">
+            </div>
+          </div>
+        </div>
+
+        <!-- Arcade Push Buttons Deck -->
+        <div class="arcade-buttons-deck">
+          <!-- Big Spin Button -->
+          <button class="arcade-btn btn-spin" id="btn-spin">
+            <span class="btn-top">🎰 RODAR O CARIMBÓ!</span>
+          </button>
+          
+          <div class="sub-buttons-group">
+            <!-- Idempotency Replay Test -->
+            <button class="arcade-btn btn-replay" id="btn-replay" disabled title="Reenvia a mesma Idempotency-Key para provar que a engine não duplica débito!">
+              <span class="btn-top">🔁 REPLAY IDEMPOTENTE</span>
+            </button>
+            
+            <!-- Refund Button -->
+            <button class="arcade-btn btn-refund" id="btn-refund" disabled title="Estorna a última aposta na engine chamando kind=REFUND">
+              <span class="btn-top">↩️ ESTORNAR APOSTA</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Session Reset / New Player Deck -->
+        <div class="wallet-actions-deck">
+          <div class="wallet-buttons-group">
+            <button class="btn-retro-action btn-deposit-action" id="btn-add-credits" title="Adicionar créditos (Bônus/Recarga) na carteira via transação de crédito (kind=WIN)">
+              💰 + CRÉDITOS
+            </button>
+            <button class="btn-retro-action" id="btn-open-audit" onclick="if(window.openAuditGo) window.openAuditGo()" title="Executar Auditoria Matemática e Reconciliação do Livro-Razão" style="color: #38bdf8; border-color: #0284c7; background: #0c4a6e;">
+              ⚖️ AUDITORIA
+            </button>
+            <button class="btn-retro-action btn-reset-action" id="btn-reset-all" title="Reiniciar Demonstração (Novo Jogador com R$ 500 no PostgreSQL)">
+              🔄 RESET DEMO
+            </button>
+          </div>
+          <div class="wallet-meta">
+            <span class="meta-label">PLAYER:</span>
+            <span class="meta-val" id="disp-player-id">---</span>
+          </div>
+          <div class="wallet-meta">
+            <span class="meta-label">WALLET:</span>
+            <span class="meta-val" id="disp-wallet-id">---</span>
+          </div>
+        </div>
+
+        <!-- How it Works Guide Box (Collapsible) -->
+        <details class="game-how-to-play">
+          <summary class="how-to-title">📖 GUIA DO VER-O-PESO: COMO FUNCIONA O JOGO (CLIQUE PARA VER)</summary>
+          <div class="how-to-grid">
+            <div class="how-item">
+              <span class="step-badge">1. SALDO</span>
+              <p>Tua carteira inicia com <strong>R$ 500,00</strong> no PostgreSQL (garante teu açaí com filhote!).</p>
+            </div>
+            <div class="how-item">
+              <span class="step-badge">2. APOSTA</span>
+              <p>Escolhe tua ficha e clica em <strong>RODAR!</strong>. A API debita a aposta (<code>BET</code>) no banco.</p>
+            </div>
+            <div class="how-item">
+              <span class="step-badge">3. PRÊMIOS</span>
+              <p>Se saírem 3 iguais (ex: 🫐 Açaí = <strong>15x</strong>, 🐟 Filhote = <strong>8x</strong>), o crédito (<code>WIN</code>) cai na hora!</p>
+            </div>
+            <div class="how-item">
+              <span class="step-badge">4. AUDITORIA</span>
+              <p>Testa o <strong>REPLAY</strong> ou faz a <strong>RECONCILIAÇÃO</strong> no Livro-Razão do Ver-o-Peso.</p>
+            </div>
+            <div class="how-item">
+              <span class="step-badge">5. ESTORNO</span>
+              <p>O <strong>REFUND</strong> devolve 100% da aposta original. Estorno duplicado é bloqueado pelo Edital.</p>
+            </div>
+          </div>
+        </details>
+
+      </div>
+    </section>
+
+    <!-- RIGHT: RETRO CRT AUDIT & COCKPIT TERMINAL -->
+    <section class="cockpit-terminal" id="cockpit-terminal">
+      <div class="terminal-bezel">
+        
+        <!-- Terminal Header -->
+        <div class="terminal-screen-header">
+          <div class="terminal-header-top">
+            <div class="terminal-title">
+              <span class="prompt-sym">></span> SYS://VER-O-PESO-AUDIT-COCKPIT <span class="cockpit-ver">[V1.06]</span>
+            </div>
+            <span class="cockpit-sub-hint">🔒 MULTI-TENANT</span>
+          </div>
+
+          <div class="terminal-header-sub">
+            <div class="provider-switch">
+              <span class="lbl-provider">PROVEDOR:</span>
+              <select id="sel-provider" class="retro-select">
+                <option value="provider-a">provider-a (Principal)</option>
+                <option value="provider-b">provider-b (Tenancy Test)</option>
+              </select>
+            </div>
+            <div class="jwt-badge-container">
+              <span class="badge-jwt-status" id="badge-jwt-status">🔑 JWT: PROVIDER-A</span>
+              <button id="btn-inspect-jwt" class="btn-retro-micro" onclick="if(window.inspectJWTGo) window.inspectJWTGo()" title="Inspecionar Token JWT ativo no Cockpit">👁️ INSPECIONAR</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Terminal Tabs -->
+        <div class="terminal-tabs">
+          <button class="tab-btn active" id="tab-btn-ledger" data-tab="tab-ledger" onclick="if(window.switchTabGo) window.switchTabGo('tab-ledger')">> 1. LIVRO DO VER-O-PESO (LEDGER)</button>
+          <button class="tab-btn" id="tab-btn-reconcile" data-tab="tab-reconcile" onclick="if(window.switchTabGo) window.switchTabGo('tab-reconcile')">> 2. AUDITORIA MATEMÁTICA</button>
+          <button class="tab-btn" id="tab-btn-unhappy" data-tab="tab-unhappy" onclick="if(window.switchTabGo) window.switchTabGo('tab-unhappy')">> 3. CASOS DE BORDA (TESTES)</button>
+        </div>
+
+        <!-- Tab 1: Live Ledger -->
+        <div class="tab-content active" id="tab-ledger">
+          <div class="tab-actions-bar">
+            <span class="sub-info">> ENTRADAS IMUTÁVEIS NO BANCO DE DADOS:</span>
+            <button class="btn-retro-mini" id="btn-refresh-ledger" onclick="if(window.refreshLedgerGo) window.refreshLedgerGo()">⟳ ATUALIZAR LEDGER</button>
+          </div>
+          <div class="ledger-table-container">
+            <table class="retro-table" id="table-ledger">
+              <thead>
+                <tr>
+                  <th>SEQ</th>
+                  <th>TIPO</th>
+                  <th>VALOR</th>
+                  <th>SALDO APÓS</th>
+                  <th>IDEMPOTÊNCIA / TX</th>
+                  <th>REFERÊNCIA</th>
+                  <th>AÇÃO</th>
+                </tr>
+              </thead>
+              <tbody id="ledger-tbody">
+                <tr>
+                  <td colspan="7" class="terminal-dim">> Nenhum lançamento registrado no Livro do Ver-o-Peso. Inicie um giro!</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 2: Mathematical Reconciliation -->
+        <div class="tab-content" id="tab-reconcile">
+          <div class="reconcile-card">
+            <p class="reconcile-desc">> O motor executa uma verificação atômica no banco: soma a integralidade de todos os débitos e créditos históricos do Ledger e compara com o saldo persistido na carteira.</p>
+            
+            <button class="btn-retro-big-action" id="btn-run-reconciliation" onclick="if(window.runReconciliationGo) window.runReconciliationGo()">
+              ⚡ EXECUTAR AUDITORIA MATEMÁTICA AGORA
+            </button>
+
+            <div class="reconcile-result-box" id="reconcile-result" style="display: none;">
+              <div class="audit-badge" id="audit-badge">STATUS: CONSISTENTE</div>
+              <div class="audit-details-grid">
+                <div class="audit-item">
+                  <span class="lbl">> Saldo em Carteira (Stored):</span>
+                  <strong class="val" id="rec-stored">R$ 0.00</strong>
+                </div>
+                <div class="audit-item">
+                  <span class="lbl">> Saldo Calculado (Sum Ledger):</span>
+                  <strong class="val" id="rec-calculated">R$ 0.00</strong>
+                </div>
+                <div class="audit-item">
+                  <span class="lbl">> Diferença Matemática:</span>
+                  <strong class="val" id="rec-diff">R$ 0.00</strong>
+                </div>
+                <div class="audit-item">
+                  <span class="lbl">> Lançamentos Auditados:</span>
+                  <strong class="val" id="rec-entries">0</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Unhappy Path Lab -->
+        <div class="tab-content" id="tab-unhappy">
+          <div class="unhappy-lab">
+            <p class="unhappy-desc">> Teste a robustez do motor disparando cenários de erro reais contra as regras de negócio:</p>
+            
+            <div class="unhappy-buttons-grid">
+              <button class="btn-error-test" data-case="insufficient_funds">
+                <span class="code">HTTP 422</span>
+                <span class="title">Saldo Insuficiente</span>
+                <span class="desc">Apostar R$ 999.999 na carteira</span>
+              </button>
+
+              <button class="btn-error-test" data-case="tenant_violation">
+                <span class="code">HTTP 403</span>
+                <span class="title">Invasão de Tenancy</span>
+                <span class="desc">Provider B tentando debitar carteira de A</span>
+              </button>
+
+              <button class="btn-error-test" data-case="invalid_currency">
+                <span class="code">HTTP 422</span>
+                <span class="title">Moeda Não Suportada</span>
+                <span class="desc">Enviar moeda "USD" ao invés de "BRL"</span>
+              </button>
+
+              <button class="btn-error-test" data-case="negative_amount">
+                <span class="code">HTTP 422</span>
+                <span class="title">Valor Negativo ou Zero</span>
+                <span class="desc">Enviar amount: "-50.00"</span>
+              </button>
+
+              <button class="btn-error-test" data-case="fake_refund">
+                <span class="code">HTTP 422</span>
+                <span class="title">Estorno Inexistente</span>
+                <span class="desc">Tentar estornar uma transação inexistente</span>
+              </button>
+
+              <button class="btn-error-test" data-case="duplicate_key_conflict">
+                <span class="code">HTTP 409</span>
+                <span class="title">Conflito de Idempotência</span>
+                <span class="desc">Mesma chave mas parâmetros diferentes</span>
+              </button>
+
+              <button class="btn-error-test btn-highlight-edital" data-case="double_refund">
+                <span class="code">HTTP 422</span>
+                <span class="title">Estorno Duplo (Anti-Double Refund)</span>
+                <span class="desc">Tentar estornar uma aposta já revertida</span>
+              </button>
+
+              <button class="btn-error-test btn-highlight-edital" data-case="pending_reference">
+                <span class="code">EDITAL 6.3</span>
+                <span class="title">Reversão Fora de Ordem</span>
+                <span class="desc">REFUND chegando antes da BET (Pending Reference)</span>
+              </button>
+
+              <button class="btn-error-test btn-highlight-edital" data-case="concurrency_dispute">
+                <span class="code">EDITAL 8.0</span>
+                <span class="title">Disputa de Concorrência (2x R$ 80)</span>
+                <span class="desc">2 apostas simultâneas de R$ 80 em saldo R$ 100</span>
+              </button>
+            </div>
+
+            <!-- Terminal Error Console Output -->
+            <div class="terminal-error-output">
+              <div class="console-title">> RESPOSTA DO SERVIDOR (HTTP INSPECTOR):</div>
+              <pre id="error-console-content">> Aguardando disparo de teste de borda...</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Terminal Live Log Output at Bottom -->
+        <div class="terminal-raw-log">
+          <div class="log-title">> EVENT MONITOR (LIVE DISPATCH):</div>
+          <div class="log-lines" id="log-lines">
+            <div class="log-line">> [BOOT] Sistema inicializado. Conectado ao Gateway Go.</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Modal for Raw Payload and cURL Inspector -->
+  <div class="retro-modal" id="payload-modal" style="display: none;">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span class="modal-title" id="modal-payload-title">> INSPETOR DE REQUISIÇÃO & PAYLOAD</span>
+        <button class="btn-close-modal" id="btn-close-modal">✕ FECHAR</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-section">
+          <span class="modal-label" id="modal-curl-label">> COMANDO CURL EQUIVALENTE:</span>
+          <pre class="code-box" id="modal-curl-content"></pre>
+        </div>
+        <div class="modal-section">
+          <span class="modal-label" id="modal-json-label">> PAYLOAD JSON DA OPERAÇÃO:</span>
+          <pre class="code-box" id="modal-json-content"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for Adding Credits / Deposit -->
+  <div class="retro-modal" id="deposit-modal" style="display: none;">
+    <div class="modal-box" style="border-color: #22c55e; max-width: 540px;">
+      <div class="modal-header" style="border-color: #14532d;">
+        <span class="modal-title" style="color: #4ade80;">💰 ADICIONAR CRÉDITOS NA CARTEIRA</span>
+        <button class="btn-close-modal" id="btn-close-deposit-modal">✕ FECHAR</button>
+      </div>
+      <div class="modal-body">
+        <div style="font-size: 0.82rem; color: #cbd5e1; line-height: 1.4; background: rgba(15, 23, 42, 0.8); padding: 10px; border-radius: 6px; border-left: 3px solid #22c55e;">
+          Conforme as regras contábeis do Edital, a recarga é processada via transação de crédito (<strong>kind=WIN</strong>) no PostgreSQL, gerando um lançamento auditável no Livro-Razão.
+        </div>
+
+        <div class="modal-section" style="margin-top: 12px;">
+          <span class="modal-label">> ESCOLHA UM VALOR RÁPIDO:</span>
+          <div style="display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;">
+            <button class="btn-retro-mini btn-quick-deposit" data-val="50">+ R$ 50</button>
+            <button class="btn-retro-mini btn-quick-deposit" data-val="100">+ R$ 100</button>
+            <button class="btn-retro-mini btn-quick-deposit" data-val="250">+ R$ 250</button>
+            <button class="btn-retro-mini btn-quick-deposit" data-val="500">+ R$ 500</button>
+          </div>
+        </div>
+
+        <div class="modal-section" style="margin-top: 10px;">
+          <span class="modal-label">> VALOR A CREDITAR (BRL):</span>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+            <span style="font-family: monospace; font-size: 1.1rem; color: #4ade80; font-weight: bold;">R$</span>
+            <input type="number" id="input-deposit-amount" value="100.00" min="1" step="10" style="background: #020617; border: 1px solid #15803d; color: #4ade80; font-family: monospace; font-size: 1.1rem; font-weight: bold; padding: 6px 10px; border-radius: 5px; width: 140px; outline: none;">
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; border-top: 1px solid #334155; padding-top: 12px;">
+          <button class="btn-retro-action" id="btn-cancel-deposit" style="background: #334155; color: #f8fafc;">✕ CANCELAR</button>
+          <button class="btn-retro-action" id="btn-confirm-deposit" style="background: #15803d; color: #ffffff; border-color: #22c55e;">
+            💰 CONFIRMAR CRÉDITO
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for Regulatory Refund Protocol (Edital Seção 7) -->
+  <div class="retro-modal" id="refund-modal" style="display: none;">
+    <div class="modal-box" style="border-color: #f59e0b; max-width: 680px;">
+      <div class="modal-header" style="border-color: #78350f;">
+        <span class="modal-title" style="color: #fbbf24;">⚖️ PROTOCOLO REGULATÓRIO DE ESTORNO (EDITAL SEÇÃO 7)</span>
+        <button class="btn-close-modal" id="btn-close-refund-modal">✕ CANCELAR</button>
+      </div>
+      <div class="modal-body">
+        <div style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.5; background: rgba(15, 23, 42, 0.8); padding: 12px; border-radius: 6px; border-left: 3px solid #f59e0b;">
+          Atenção: O estorno regulatório (<strong>kind=REFUND</strong>) reverte integralmente o débito da aposta no Livro-Razão contábil. A transação original será marcada como estornada permanentemente, bloqueando devoluções duplicadas.
+        </div>
+        
+        <div class="modal-section" style="margin-top: 10px;">
+          <span class="modal-label">> METADADOS DA TRANSAÇÃO REFERENCIADA:</span>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-family: monospace; font-size: 0.85rem; background: #020617; padding: 10px; border-radius: 6px; border: 1px solid #1e293b;">
+            <div><span style="color: #94a3b8;">TRANSAÇÃO ORIGEM:</span> <br><strong id="refund-modal-txid" style="color: #38bdf8;">---</strong></div>
+            <div><span style="color: #94a3b8;">RODADA (ROUND ID):</span> <br><strong id="refund-modal-roundid" style="color: #38bdf8;">---</strong></div>
+            <div><span style="color: #94a3b8;">PROVEDOR ATIVO:</span> <br><strong id="refund-modal-provider" style="color: #e2e8f0;">---</strong></div>
+            <div><span style="color: #94a3b8;">CARTEIRA / JOGADOR:</span> <br><strong id="refund-modal-wallet" style="color: #e2e8f0;">---</strong></div>
+            <div style="grid-column: span 2; border-top: 1px solid #1e293b; padding-top: 8px; margin-top: 4px;">
+              <span style="color: #fbbf24; font-weight: bold;">VALOR A DEVOLVER:</span> 
+              <strong id="refund-modal-amount" style="color: #4ade80; font-size: 1.15rem; font-weight: bold; margin-left: 6px;">R$ 0,00</strong>
+              <span style="color: #94a3b8; font-size: 0.78rem; margin-left: 8px;">(100% idêntico ao débito original - Edital Seção 7)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-section" style="margin-top: 8px;">
+          <span class="modal-label">> CRITÉRIOS DO EDITAL ATENDIDOS:</span>
+          <div style="font-size: 0.8rem; color: #94a3b8; display: flex; flex-direction: column; gap: 4px; background: rgba(2, 6, 23, 0.6); padding: 8px; border-radius: 6px;">
+            <div><span style="color: #4ade80;">✔</span> <strong>Integridade Contábil 1:1:</strong> Moeda e valor estornados coincidem estritamente com o débito da BET referenciada.</div>
+            <div><span style="color: #4ade80;">✔</span> <strong>Rastreabilidade:</strong> Referência direta <code>referenceExternalTransactionId</code> auditável no Ledger.</div>
+            <div><span style="color: #4ade80;">✔</span> <strong>Anti-Double Refund (Seção 7):</strong> Qualquer segunda tentativa de reversão será bloqueada e rejeitada pela engine com erro 422.</div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 14px; border-top: 1px solid #334155; padding-top: 12px;">
+          <button class="btn-retro-action" id="btn-cancel-refund" style="background: #334155; color: #f8fafc; padding: 10px 18px;">✕ ABORTAR</button>
+          <button class="arcade-btn" id="btn-confirm-refund" style="background: #b45309; box-shadow: 0 4px 0 #78350f; border-radius: 6px;">
+            <span class="btn-top" style="background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%); color: #020617; font-weight: 800; padding: 10px 20px; font-size: 0.95rem;">
+              ⚖️ EXECUTAR ESTORNO REGULATÓRIO
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WebAssembly 100% Go Client Engine -->
+  <script src="/app/wasm_exec.js"></script>
+  <script>
+    const go = new Go();
+    WebAssembly.instantiateStreaming(fetch("/app/game.wasm?t=" + Date.now()), go.importObject)
+      .then((result) => {
+        console.log("🎮 [Go WebAssembly] Módulo instanciado com sucesso! Executando binário nativo em Go...");
+        go.run(result.instance);
+      })
+      .catch((err) => {
+        console.error("❌ Falha ao carregar WebAssembly Go:", err);
+      });
+  </script>
+</body>
+</html>

@@ -82,7 +82,7 @@ func registerLifecycle(
 
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			logger.Info("Iniciando Ecossistema Nexus - Desafio Go Backend")
+			logger.Info("Iniciando Desafio Jungle Game - Go Backend")
 
 			// 1. Aplicação das Migrations no PostgreSQL
 			migrationFile := "migrations/000001_init_schema.up.sql"

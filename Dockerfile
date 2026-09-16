@@ -14,7 +14,10 @@ RUN go mod download
 # Copia o código-fonte
 COPY . .
 
-# Compila o binário otimizado e stripped (sem CGO)
+# Compila o WebAssembly em Go (game.wasm) para o cliente Web do Arcade
+RUN GOOS=js GOARCH=wasm go build -ldflags="-s -w" -o ./internal/infrastructure/http/web/static/game.wasm ./cmd/wasm
+
+# Compila o binário otimizado e stripped (sem CGO) com assets e game.wasm embutidos
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /app/bin/api ./cmd/api
 
 # Estágio final mínimo, sem distribuição Linux ou gerenciador de pacotes.

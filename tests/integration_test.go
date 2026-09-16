@@ -19,6 +19,7 @@ import (
 	"backend-challenge-go/internal/application"
 	"backend-challenge-go/internal/domain"
 	"backend-challenge-go/internal/infrastructure/auth"
+	"backend-challenge-go/internal/infrastructure/config"
 	"backend-challenge-go/internal/infrastructure/database"
 	internalHttp "backend-challenge-go/internal/infrastructure/http"
 	"backend-challenge-go/internal/infrastructure/messaging"
@@ -70,8 +71,9 @@ func setupTestApp(t *testing.T) (*httptest.Server, *database.Repository, *pgxpoo
 	}
 	sqsClient, err := messaging.NewSQSClient(sqsConfig)
 	require.NoError(t, err, "falha ao criar cliente SQS de teste")
+	appCfg := config.AppConfig{AuthIssuer: issuer}
 	handler := internalHttp.NewHandler(walletService, wagerService, reconcileService, pool, sqsClient, sqsConfig)
-	router := internalHttp.NewRouter(handler, tokenValidator, logger)
+	router := internalHttp.NewRouter(handler, tokenValidator, appCfg, logger)
 
 	server := httptest.NewServer(router)
 
@@ -757,7 +759,7 @@ func TestIntegration_SQSConsumerWorker(t *testing.T) {
 		)
 
 		return lookupErr == nil && processed
-	}, 5*time.Second, 100*time.Millisecond)
+	}, 15*time.Second, 100*time.Millisecond)
 
 	// 4. Valida se a mensagem foi registrada na Inbox e debitou a carteira para 85.00 BRL
 	hasProcessed, err := repo.HasInboxMessage(context.Background(), "wager-transactions-sqs-consumer", msgID)

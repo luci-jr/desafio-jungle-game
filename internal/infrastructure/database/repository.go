@@ -163,15 +163,18 @@ func (r *Repository) CreateLedgerEntry(ctx context.Context, tx pgx.Tx, entry *do
 
 // LedgerItemDTO é o registro retornado na consulta paginada do ledger.
 type LedgerItemDTO struct {
-	ID            string    `json:"id"`
-	WalletID      string    `json:"walletId"`
-	TransactionID string    `json:"transactionId"`
-	Direction     string    `json:"direction"`
-	Amount        string    `json:"amount"`
-	Currency      string    `json:"currency"`
-	BalanceBefore string    `json:"balanceBefore"`
-	BalanceAfter  string    `json:"balanceAfter"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID                       string    `json:"id"`
+	WalletID                 string    `json:"walletId"`
+	TransactionID            string    `json:"transactionId"`
+	Kind                     string    `json:"kind"`
+	Direction                string    `json:"direction"`
+	Amount                   string    `json:"amount"`
+	Currency                 string    `json:"currency"`
+	BalanceBefore            string    `json:"balanceBefore"`
+	BalanceAfter             string    `json:"balanceAfter"`
+	ExternalTransactionID    string    `json:"externalTransactionId,omitempty"`
+	ReferenceExternalID      string    `json:"referenceExternalTransactionId,omitempty"`
+	CreatedAt                time.Time `json:"createdAt"`
 }
 
 // GetLedgerEntries consulta lançamentos com paginação estável por cursor (timestamp/id).
@@ -187,9 +190,11 @@ func (r *Repository) GetLedgerEntries(ctx context.Context, walletId string, curs
 
 	if cursor != "" {
 		query = `
-			SELECT l.id, l.wallet_id, l.transaction_id, l.direction, l.amount, l.balance_before, l.balance_after, l.created_at, w.currency
+			SELECT l.id, l.wallet_id, l.transaction_id, l.direction, l.amount, l.balance_before, l.balance_after, l.created_at, w.currency,
+			       COALESCE(wt.kind, 'OPENING'), COALESCE(wt.external_transaction_id, ''), COALESCE(wt.reference_external_transaction_id, '')
 			FROM wallet_ledger_entries l
 			JOIN wallets w ON w.id = l.wallet_id
+			LEFT JOIN wager_transactions wt ON wt.id = l.transaction_id
 			WHERE l.wallet_id = $1
 			  AND (l.created_at, l.id) < (
 				  SELECT created_at, id
@@ -202,9 +207,11 @@ func (r *Repository) GetLedgerEntries(ctx context.Context, walletId string, curs
 		rows, err = r.pool.Query(ctx, query, walletId, cursor, limit)
 	} else {
 		query = `
-			SELECT l.id, l.wallet_id, l.transaction_id, l.direction, l.amount, l.balance_before, l.balance_after, l.created_at, w.currency
+			SELECT l.id, l.wallet_id, l.transaction_id, l.direction, l.amount, l.balance_before, l.balance_after, l.created_at, w.currency,
+			       COALESCE(wt.kind, 'OPENING'), COALESCE(wt.external_transaction_id, ''), COALESCE(wt.reference_external_transaction_id, '')
 			FROM wallet_ledger_entries l
 			JOIN wallets w ON w.id = l.wallet_id
+			LEFT JOIN wager_transactions wt ON wt.id = l.transaction_id
 			WHERE l.wallet_id = $1
 			ORDER BY l.created_at DESC, l.id DESC
 			LIMIT $2
@@ -222,11 +229,11 @@ func (r *Repository) GetLedgerEntries(ctx context.Context, walletId string, curs
 
 	for rows.Next() {
 		var (
-			id, wId, tId, direction, currency string
-			amount, bBefore, bAfter           int64
-			createdAt                         time.Time
+			id, wId, tId, direction, currency, kind, extTxId, refExtId string
+			amount, bBefore, bAfter                                    int64
+			createdAt                                                  time.Time
 		)
-		if err := rows.Scan(&id, &wId, &tId, &direction, &amount, &bBefore, &bAfter, &createdAt, &currency); err != nil {
+		if err := rows.Scan(&id, &wId, &tId, &direction, &amount, &bBefore, &bAfter, &createdAt, &currency, &kind, &extTxId, &refExtId); err != nil {
 			return nil, "", err
 		}
 
@@ -235,15 +242,18 @@ func (r *Repository) GetLedgerEntries(ctx context.Context, walletId string, curs
 		baM, _ := domain.NewMoney(bAfter, currency)
 
 		entries = append(entries, LedgerItemDTO{
-			ID:            id,
-			WalletID:      wId,
-			TransactionID: tId,
-			Direction:     direction,
-			Amount:        amtM.AmountString(),
-			Currency:      currency,
-			BalanceBefore: bbM.AmountString(),
-			BalanceAfter:  baM.AmountString(),
-			CreatedAt:     createdAt,
+			ID:                    id,
+			WalletID:              wId,
+			TransactionID:         tId,
+			Kind:                  kind,
+			Direction:             direction,
+			Amount:                amtM.AmountString(),
+			Currency:              currency,
+			BalanceBefore:         bbM.AmountString(),
+			BalanceAfter:          baM.AmountString(),
+			ExternalTransactionID: extTxId,
+			ReferenceExternalID:   refExtId,
+			CreatedAt:             createdAt,
 		})
 		nextCursor = id
 	}

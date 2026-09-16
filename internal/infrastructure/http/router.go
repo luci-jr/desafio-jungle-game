@@ -6,19 +6,25 @@ import (
 	"time"
 
 	"backend-challenge-go/internal/infrastructure/auth"
+	"backend-challenge-go/internal/infrastructure/config"
+	"backend-challenge-go/internal/infrastructure/http/web"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
 // NewRouter configura todas as rotas e middlewares HTTP.
-func NewRouter(h *Handler, authValidator *auth.TokenValidator, logger *slog.Logger) http.Handler {
+func NewRouter(h *Handler, authValidator *auth.TokenValidator, cfg config.AppConfig, logger *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	r.Use(CORSMiddleware())
 	r.Use(StructuredLoggerMiddleware(logger))
+
+	// Rotas Públicas da Interface Visual Retro & Assets Embutidos
+	web.RegisterWebRoutes(r, cfg.AuthIssuer, logger)
 
 	// Rotas Públicas (Health Checks)
 	r.Get("/health/live", h.Liveness)
@@ -45,6 +51,26 @@ func NewRouter(h *Handler, authValidator *auth.TokenValidator, logger *slog.Logg
 	})
 
 	return r
+}
+
+// CORSMiddleware permite requisições da interface web ou de outros clients locais.
+func CORSMiddleware() func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token, Idempotency-Key")
+			w.Header().Set("Access-Control-Expose-Headers", "Link, Idempotency-Key")
+			w.Header().Set("Access-Control-Max-Age", "300")
+
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // StructuredLoggerMiddleware gera logs estruturados em formato JSON com tempo de resposta e status.

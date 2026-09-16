@@ -1,6 +1,7 @@
 # Binários compilados do Go.
 /bin/
 /dist/
+/api
 *.exe
 *.exe~
 *.dll

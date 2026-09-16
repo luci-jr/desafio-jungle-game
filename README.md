@@ -1,5 +1,13 @@
 # 🎲 Desafio Backend — Processamento Distribuído de Apostas em Go
 
+> ### 🏆 Desafio Técnico — Jungle Gaming (Backend Developer - Go)
+> Este projeto consiste na resolução prática do desafio técnico para a vaga de **Backend Developer - Go** na [Jungle Gaming](https://junglegaming.io/pt), recebido após aprovação na etapa de entrevista técnica via comunicado oficial de Alison Dias (`alisondias@team.junglegaming.io`) em 14 de setembro de 2026.
+> 
+> - **Repositório Oficial do Desafio:** [junglegaming/backend-challenge-go](https://github.com/junglegaming/backend-challenge-go)
+> - **Candidato:** Lucivaldo Junior
+> - **Prazo de Conclusão:** 3 dias
+> - **Stack Tecnológica:** Go 1.26.4, Uber Fx, PostgreSQL 16 (ACID, Row-Level Locking e Triggers de Imutabilidade), AWS SQS FIFO (LocalStack com DLQ e Deduplicação), Keycloak 24 (OIDC OAuth 2.0 / RS256 JWKS), WebAssembly (Go WASM) e Web Cockpit Retrô.
+
 Serviço financeiro concorrente e distribuído para processamento de apostas de provedores de jogos (*iGaming / Sportsbook*). Desenvolvido em **Go 1.26.4**, composto com **Uber Fx**, com persistência relacional ACID em **PostgreSQL 16**, mensageria assíncrona **AWS SQS FIFO** via **LocalStack**, e autenticação OIDC via **Keycloak**.
 
 ---
@@ -17,6 +25,23 @@ Serviço financeiro concorrente e distribuído para processamento de apostas de 
 > locais `5432`, `4566`, `8000` e `8080` estão livres. Elas são usadas,
 > respectivamente, por PostgreSQL, LocalStack, API e Keycloak.
 
+### ⚠️ Pontos de Atenção Cruciais para Execução em Qualquer Máquina
+
+Para garantir que o projeto execute do absoluto zero em qualquer sistema (Linux, macOS ou Windows/WSL2) sem nenhum conflito:
+
+1. **Conflito de Portas no Host:**
+   - O projeto expõe 4 portas no sistema host: `8000` (API), `5432` (PostgreSQL), `8080` (Keycloak) e `4566` (LocalStack).
+   - **PostgreSQL Local:** Se a sua máquina já possui uma instância local do PostgreSQL ativa na porta `5432`, pause o serviço antes de subir os containers (ex: `sudo systemctl stop postgresql` no Linux ou `brew services stop postgresql` no Mac) para evitar o erro `bind: address already in use`.
+2. **Zero Configuração Manual (Tudo Automatizado no Boot):**
+   - **Migrations do Banco:** São aplicadas automaticamente no boot da aplicação a partir de `migrations/000001_init_schema.up.sql`. Não é necessário criar tabelas ou rodar queries manuais.
+   - **Realm & Clientes OIDC:** O Keycloak inicializa com a flag `--import-realm` lendo `keycloak/realm-export.json`. Usuários, secrets e clientes (`internal-service`, `provider-a`, `provider-b`) já sobem prontos.
+   - **Filas SQS FIFO:** O LocalStack cria as filas (`.fifo`) e a DLQ automaticamente no boot através do script `localstack/init-sqs.sh`.
+3. **Bateria Completa de Testes E2E em 10 Segundos:**
+   - Execute o script `./scripts/test_e2e.sh` para rodar todos os **21 cenários de teste ponta a ponta**.
+   - O script é **independente de ferramentas na máquina host**: não exige `aws-cli` instalado (ele utiliza fallback inteligente com `awslocal` direto no container do LocalStack). Apenas requer `curl`, `jq` e `docker`.
+4. **Guia Didático e Cenários de Borda:**
+   - Consulte o documento detalhado [`GUIA_DE_TESTES_E_CENARIOS.md`](GUIA_DE_TESTES_E_CENARIOS.md) para entender os fundamentos técnicos de cada teste (concorrência `SELECT ... FOR UPDATE`, triggers PL/pgSQL de imutabilidade, tokens JWT RS256 e resiliência fora de ordem).
+
 Após clonar o repositório, execute:
 
 ```bash
@@ -32,11 +57,65 @@ until curl -fsS http://localhost:8000/health/ready; do sleep 2; done
 ```
 
 O último comando deve retornar o status `UP`. A API estará disponível em
-`http://localhost:8000`. Consulte as chamadas autenticadas na seção 7.
+`http://localhost:8000`. Consulte a interface interativa na seção 2 e as chamadas autenticadas na seção 8.
 
 ---
 
-## ⚙️ 2. Variáveis de Ambiente (`.env`)
+## 🎮 2. Jungle Slots 1987 — Cockpit Arcade & Simulador Visual da Engine
+
+Para além da bateria de testes via terminal e Postman, este projeto inclui uma **interface visual completa de cockpit e simulador de apostas** embutida nativamente no binário Go, acessível diretamente no navegador:
+
+👉 **URL de Acesso Local:** [http://localhost:8000/app/](http://localhost:8000/app/) *(ou simplesmente `http://localhost:8000/`, que redireciona automaticamente)*
+
+### 🏛️ Ambientação & Arquitetura Visual
+Com visual temático retrô anos 80 inspirado no lendário **Fliperama do Ver-o-Peso (Belém do Pará)**, a interface traz elementos culturais amazônicos (Açaí 🫐, Filhote frito 🐟, Manga da Presidente Vargas 🥭, Castanha-do-Pará 🌰, Onça-Pintada 🐆 e Muiraquitã Sagrado 💎) com efeitos de áudio *chiptune* sintetizados nativamente via Web Audio API.
+
+O motor probabilístico e a mecânica das bobinas rodam sobre **WebAssembly (WASM) compilado diretamente a partir de código Go** (`cmd/wasm/main.go` ➔ `internal/infrastructure/http/web/static/game.wasm`), operando em conjunto com a interface reativa no navegador.
+
+### 🧪 Como o Jogo Reflete Fielmente os Testes e a Engine Distribuída
+O jogo não é apenas uma interface gráfica isolada: **ele consome as rotas reais da API Go via HTTP em tempo real**, servindo como um cockpit de observabilidade e auditoria viva dos mesmos cenários validados nos testes automatizados:
+
+1. **Criação de Carteira com Saldo Real (`POST /wallets`):**
+   - Ao carregar a página (ou ao clicar no botão `🔄 RESET DEMO`), o frontend solicita à API a criação de uma carteira real com saldo de **R$ 500,00** no PostgreSQL usando o token administrativo (`internal-service`).
+2. **Débito Atômico da Aposta (`BET`):**
+   - Ao clicar em `🎰 RODAR O CARIMBÓ!`, o frontend gera um identificador único de aposta e despacha uma requisição `POST /wagering/transactions` autenticada com token JWT do provedor ativo (`provider-a`).
+   - A engine Go bloqueia a linha da carteira no PostgreSQL com `SELECT ... FOR UPDATE`, deduz o valor da aposta (R$ 10, R$ 25, R$ 50 ou R$ 100), registra a transação e insere um registro imutável no ledger contábil.
+3. **Crédito Imediato de Prêmios (`WIN`):**
+   - Caso a combinação dos 3 rolos resulte em vitória (multiplicadores de 1.1x a 20x), a aplicação despacha uma transação `kind=WIN`, creditando o prêmio na carteira com registro proporcional no livro-razão.
+4. **Demonstração Visual de Idempotência (`🔁 REPLAY IDEMPOTENTE`):**
+   - O botão `🔁 REPLAY IDEMPOTENTE` reenvia a **mesma requisição anterior** com o mesmo `externalTransactionId` e `Idempotency-Key`.
+   - A engine Go detecta a chave já processada no PostgreSQL, não debita nem credita nada novamente, e responde com `200 OK` e `idempotentReplay: true`. O terminal exibe a confirmação de que o saldo permaneceu inalterado.
+5. **Estorno de Aposta (`↩️ ESTORNAR APOSTA` - `REFUND`):**
+   - O botão `↩️ ESTORNAR APOSTA` envia um `POST /wagering/transactions` com `kind=REFUND`, apontando para o `externalTransactionId` da aposta original (`referenceExternalTransactionId`).
+   - A engine Go verifica se a aposta de referência existe, garante que ainda não foi estornada, credita o saldo integral de volta e grava a compensação no ledger. Um segundo clique consecutivo aciona o erro de domínio e retorna HTTP `422 Unprocessable Entity` com `REFERENCE_ALREADY_REVERSED`.
+6. **Auditoria Contábil e Reconciliação (`POST /wallets/{walletId}/reconciliation`):**
+   - Ao acionar o botão `⚖️ AUDITORIA`, a engine Go executa a prova matemática contábil: soma todos os créditos e subtrai todos os débitos do ledger imutável e compara com o saldo atual da carteira. Se a equação bater perfeitamente, retorna `consistent: true` com a diferença de `0.00 BRL`.
+7. **Isolamento de Tenants (Multi-Tenancy):**
+   - O seletor de provedor permite alternar instantaneamente entre `provider-a` e `provider-b`. Ao alternar, o frontend troca o token JWT e o provedor nos cabeçalhos, demonstrando que transações de um inquilino não podem ser visualizadas nem manipuladas por outro.
+8. **Terminal CRT de Telemetria e Logs:**
+   - No painel direito, um terminal simulando monitor de tubo CRT verde/âmbar renderiza o log em tempo real das chamadas HTTP: método, endpoint, latência em milissegundos, status HTTP e payload JSON recebido.
+
+---
+
+### 🌐 Arquitetura Web: Entrega Nativa Embutida em Go vs. Deploy na Vercel
+
+Uma dúvida conceitual importante é: *"Teria como fazer o deploy desse jogo na Vercel?"*
+
+A resposta técnica envolve a **natureza arquitetural da solução**:
+
+1. **A Vercel é voltada a Frontends Estáticos e Funções Serverless:**
+   - A plataforma Vercel foi concebida para páginas estáticas (HTML/CSS/JS) e Serverless Functions efêmeras (Node.js/Edge).
+   - Ela **não suporta execução contínua de containers Stateful Docker** (PostgreSQL 16 com triggers e locks transacionais, LocalStack emulando AWS SQS FIFO com workers em loop constante, e Keycloak 24 como Identity Provider).
+2. **Forte Acoplamento com o Backend Stateful:**
+   - O jogo `Jungle Slots 1987` não é uma aplicação puramente cliente com dados falsos (*mock*). Ele depende diretamente das rotas transacionais `/wallets`, `/wagering/transactions`, `/app/api/tokens` e do PostgreSQL para demonstrar concorrência real, idempotência e imutabilidade do ledger.
+   - Fazer o deploy exclusivo do frontend na Vercel faria com que todas as requisições quebrassem (`Connection Refused` ou erro de CORS), a menos que toda a infraestrutura backend (Postgres, Keycloak, SQS e API Go) fosse previamente implantada em uma nuvem pública (AWS ECS, Fly.io ou Render) com domínios públicos e certificados SSL.
+3. **A Decisão Arquitetural Sênior (Single-Binary Self-Hosted com `//go:embed`):**
+   - Optamos pelo padrão ouro do ecossistema Go corporativo: embutir todos os artefatos estáticos (HTML, CSS, JS e o binário WebAssembly `game.wasm`) diretamente dentro do binário compilado da API Go através da diretiva `//go:embed static` ([`internal/infrastructure/http/web/ui.go`](internal/infrastructure/http/web/ui.go)).
+   - **Vantagem para o Avaliador:** Quem clona o repositório e sobe o Docker Compose tem a **solução 100% operacional no ar em segundos**, sem dependência de nuvens externas de terceiros, sem risco de expiração de links, com latência zero e suporte completo *offline-first*.
+
+---
+
+## ⚙️ 3. Variáveis de Ambiente (`.env`)
 
 O Docker Compose já configura todas as variáveis necessárias para o caminho
 recomendado. Para executar a API nativamente, use o arquivo de exemplo
@@ -85,7 +164,7 @@ set +a
 
 ---
 
-## 🐳 3. Execução do Ambiente com Docker Compose
+## 🐳 4. Execução do Ambiente com Docker Compose
 
 Para subir PostgreSQL, LocalStack, Keycloak e a API conteinerizada:
 ```bash
@@ -110,7 +189,7 @@ go run cmd/api/main.go
 
 ---
 
-## 🗄️ 4. Migrations do Banco de Dados
+## 🗄️ 5. Migrations do Banco de Dados
 
 As migrations são aplicadas de forma automática pelo ciclo de vida (`fx.Lifecycle`) da aplicação Go ao iniciar.
 
@@ -128,7 +207,7 @@ docker exec -i betting-postgres psql -U postgres -d betting_db < migrations/0000
 
 ---
 
-## 🔑 5. Autenticação e Provedores de Teste (Keycloak)
+## 🔑 6. Autenticação e Provedores de Teste (Keycloak)
 
 O Keycloak inicializa com o realm `betting` e dois clientes pré-configurados com protocolo `client_credentials`:
 
@@ -163,12 +242,21 @@ usados somente para enviar e consultar suas próprias apostas.
 
 ---
 
-## 🧪 6. Execução de Testes Automatizados
+## 🧪 7. Execução de Testes Automatizados
 
 O projeto conta com suíte completa de testes unitários, testes de concorrência com disputa de apostas, integridade de ledger e resiliência com containers reais.
 
-### Preparação do Ambiente para os Testes
-Para executar a suíte completa de integração e concorrência que depende de infraestrutura real, suba previamente os containers de apoio:
+### 🚀 Bateria Oficial de Testes E2E (21 Cenários Ponta a Ponta)
+Com o ambiente Docker completo em execução (`docker compose up -d`), execute todos os 21 cenários de teste de integração HTTP e SQS via script automatizado:
+```bash
+./scripts/test_e2e.sh
+```
+> O script valida o fluxo principal (Happy Path), replay de idempotência, concorrência, mensageria SQS FIFO, isolamento de provedores (Multi-Tenancy) e todos os cenários de erro e resiliência em ~10 segundos.
+
+---
+
+### Preparação do Ambiente para Testes Nativos em Go (`go test`)
+Para executar a suíte interna de integração e concorrência que depende de infraestrutura real sem concorrência de workers:
 ```bash
 docker compose up -d postgres localstack keycloak
 docker compose stop api
@@ -275,9 +363,9 @@ mesmo PostgreSQL e têm memória e conexões próprias.
 
 ---
 
-## 📡 7. Mapa da API para Postman e chamadas HTTP
+## 📡 8. Mapa da API para Postman e chamadas HTTP
 
-### 7.1. Configuração do ambiente no Postman
+### 8.1. Configuração do ambiente no Postman
 
 Crie um Environment com estas variáveis:
 
@@ -308,7 +396,7 @@ client_secret=secret-a
 Repita com `client_id=internal-service` e `client_secret=secret-internal`.
 Copie o campo `access_token` para a variável correspondente.
 
-### 7.2. Mapa dos endpoints
+### 8.2. Mapa dos endpoints
 
 | Método | Endpoint | Token | Resultado esperado |
 |---|---|---|---|
@@ -335,7 +423,7 @@ adicione também:
 Idempotency-Key: {{providerId}}:{{betExternalId}}
 ```
 
-### 7.3. Ordem sugerida no Postman
+### 8.3. Ordem sugerida no Postman
 
 1. Obtenha `providerToken` e `internalToken` no Keycloak.
 2. Execute `POST /wallets` usando `internalToken` e salve o campo `id` em `walletId`.
@@ -348,7 +436,7 @@ Idempotency-Key: {{providerId}}:{{betExternalId}}
 Os exemplos abaixo usam `curl` e reproduzem as mesmas requisições que podem ser
 criadas no Postman.
 
-### 7.4. Health Checks (Públicos)
+### 8.4. Health Checks (Públicos)
 ```bash
 # Liveness (saúde do processo)
 curl -s http://localhost:8000/health/live
@@ -357,7 +445,7 @@ curl -s http://localhost:8000/health/live
 curl -s http://localhost:8000/health/ready
 ```
 
-### 7.5. Criar Carteira com Saldo Inicial
+### 8.5. Criar Carteira com Saldo Inicial
 ```bash
 curl -s -X POST http://localhost:8000/wallets \
   -H "Authorization: Bearer $INTERNAL_TOKEN" \
@@ -368,19 +456,19 @@ curl -s -X POST http://localhost:8000/wallets \
   }' | jq
 ```
 
-### 7.6. Consultar Saldo da Carteira
+### 8.6. Consultar Saldo da Carteira
 ```bash
 curl -s http://localhost:8000/wallets/<WALLET_ID> \
   -H "Authorization: Bearer $INTERNAL_TOKEN" | jq
 ```
 
-### 7.7. Consultar Extrato (Ledger) com Paginação por Cursor
+### 8.7. Consultar Extrato (Ledger) com Paginação por Cursor
 ```bash
 curl -s "http://localhost:8000/wallets/<WALLET_ID>/ledger?limit=50" \
   -H "Authorization: Bearer $INTERNAL_TOKEN" | jq
 ```
 
-### 7.8. Enviar Aposta (`BET`) com Chave de Idempotência
+### 8.8. Enviar Aposta (`BET`) com Chave de Idempotência
 ```bash
 curl -s -X POST http://localhost:8000/wagering/transactions \
   -H "Authorization: Bearer $PROVIDER_TOKEN" \
@@ -398,7 +486,7 @@ curl -s -X POST http://localhost:8000/wagering/transactions \
   }' | jq
 ```
 
-### 7.9. Enviar Prêmio (`WIN`)
+### 8.9. Enviar Prêmio (`WIN`)
 ```bash
 curl -s -X POST http://localhost:8000/wagering/transactions \
   -H "Authorization: Bearer $PROVIDER_TOKEN" \
@@ -416,7 +504,7 @@ curl -s -X POST http://localhost:8000/wagering/transactions \
   }' | jq
 ```
 
-### 7.10. Enviar Estorno (`REFUND`) com Referência Externa
+### 8.10. Enviar Estorno (`REFUND`) com Referência Externa
 ```bash
 curl -s -X POST http://localhost:8000/wagering/transactions \
   -H "Authorization: Bearer $PROVIDER_TOKEN" \
@@ -435,13 +523,13 @@ curl -s -X POST http://localhost:8000/wagering/transactions \
   }' | jq
 ```
 
-### 7.11. Consultar Transação por Identificador Externo
+### 8.11. Consultar Transação por Identificador Externo
 ```bash
 curl -s http://localhost:8000/providers/provider-a/wagering/transactions/tx-101 \
   -H "Authorization: Bearer $PROVIDER_TOKEN" | jq
 ```
 
-### 7.12. Reconciliação Contábil da Carteira
+### 8.12. Reconciliação Contábil da Carteira
 ```bash
 curl -s -X POST http://localhost:8000/wallets/<WALLET_ID>/reconciliation \
   -H "Authorization: Bearer $INTERNAL_TOKEN" | jq
@@ -449,7 +537,7 @@ curl -s -X POST http://localhost:8000/wallets/<WALLET_ID>/reconciliation \
 
 ---
 
-## 📨 8. Envio de Mensagens SQS FIFO
+## 📨 9. Envio de Mensagens SQS FIFO
 
 ```bash
 docker exec -i betting-localstack awslocal sqs send-message \
@@ -476,7 +564,7 @@ docker exec -i betting-localstack awslocal sqs send-message \
 
 ---
 
-## 🧹 9. Encerramento e limpeza do ambiente
+## 🧹 10. Encerramento e limpeza do ambiente
 
 Para parar os containers, preservando os dados locais do PostgreSQL:
 

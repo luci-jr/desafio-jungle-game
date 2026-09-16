@@ -98,7 +98,11 @@ func (h *Handler) CreateWallet(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
-		if errors.Is(err, domain.ErrCurrencyMismatch) || errors.Is(err, domain.ErrNegativeBalance) {
+		if errors.Is(err, domain.ErrCurrencyMismatch) ||
+			errors.Is(err, domain.ErrNegativeBalance) ||
+			errors.Is(err, domain.ErrNegativeMoney) ||
+			errors.Is(err, domain.ErrInvalidCurrency) ||
+			errors.Is(err, domain.ErrInvalidMoneyFormat) {
 			writeError(w, http.StatusUnprocessableEntity, err.Error())
 			return
 		}
@@ -187,7 +191,13 @@ func (h *Handler) ProcessTransaction(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, domain.ErrCurrencyMismatch) ||
 			errors.Is(err, domain.ErrInvalidTransactionKind) ||
 			errors.Is(err, domain.ErrReferenceNotFound) ||
+			errors.Is(err, domain.ErrReferenceNotProcessed) ||
 			errors.Is(err, domain.ErrReferenceMismatch) ||
+			errors.Is(err, domain.ErrReferenceAlreadyReversed) ||
+			errors.Is(err, domain.ErrZeroNotAllowed) ||
+			errors.Is(err, domain.ErrNegativeMoney) ||
+			errors.Is(err, domain.ErrInvalidMoneyFormat) ||
+			errors.Is(err, domain.ErrInvalidCurrency) ||
 			errors.Is(err, domain.ErrOpeningNotAllowedExternally) {
 			writeError(w, http.StatusUnprocessableEntity, err.Error())
 			return
