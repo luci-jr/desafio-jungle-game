@@ -517,17 +517,63 @@
   </div>
 
   <!-- WebAssembly 100% Go Client Engine -->
-  <script src="/app/wasm_exec.js"></script>
   <script>
-    const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("/app/game.wasm?t=" + Date.now()), go.importObject)
-      .then((result) => {
-        console.log("🎮 [Go WebAssembly] Módulo instanciado com sucesso! Executando binário nativo em Go...");
-        go.run(result.instance);
-      })
-      .catch((err) => {
-        console.error("❌ Falha ao carregar WebAssembly Go:", err);
-      });
+    (function() {
+      const isLocalApp = window.location.pathname.startsWith('/app');
+      const scriptSrc = isLocalApp ? '/app/wasm_exec.js' : '/wasm_exec.js';
+      
+      const script = document.createElement('script');
+      script.src = scriptSrc;
+      script.onload = function() {
+        if (typeof Go !== 'undefined') {
+          startWasm();
+        }
+      };
+      script.onerror = function() {
+        // Fallback para outro path
+        const fallbackScript = document.createElement('script');
+        fallbackScript.src = isLocalApp ? '/wasm_exec.js' : '/app/wasm_exec.js';
+        fallbackScript.onload = startWasm;
+        document.body.appendChild(fallbackScript);
+      };
+      document.body.appendChild(script);
+
+      function startWasm() {
+        const go = new Go();
+        const primaryWasm = (isLocalApp ? '/app/game.wasm' : '/game.wasm') + '?t=' + Date.now();
+        const fallbackWasm = (isLocalApp ? '/game.wasm' : '/app/game.wasm') + '?t=' + Date.now();
+
+        const fetchAndInstantiate = (path) => {
+          if (WebAssembly.instantiateStreaming) {
+            return WebAssembly.instantiateStreaming(fetch(path), go.importObject)
+              .catch(() => {
+                return fetch(path)
+                  .then(res => {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.arrayBuffer();
+                  })
+                  .then(bytes => WebAssembly.instantiate(bytes, go.importObject));
+              });
+          }
+          return fetch(path)
+            .then(res => {
+              if (!res.ok) throw new Error('HTTP ' + res.status);
+              return res.arrayBuffer();
+            })
+            .then(bytes => WebAssembly.instantiate(bytes, go.importObject));
+        };
+
+        fetchAndInstantiate(primaryWasm)
+          .catch(() => fetchAndInstantiate(fallbackWasm))
+          .then((result) => {
+            console.log("🎮 [Go WebAssembly] Módulo instanciado com sucesso! Executando binário nativo em Go...");
+            go.run(result.instance);
+          })
+          .catch((err) => {
+            console.error("❌ Falha ao carregar WebAssembly Go:", err);
+          });
+      }
+    })();
   </script>
 </body>
 </html>

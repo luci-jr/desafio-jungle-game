@@ -977,7 +977,29 @@ curl -s -X POST http://localhost:8000/wagering/transactions \
 | **`409 Conflict`** | `wallet already exists for this player and currency` | Constraint `UNIQUE(player_id, currency)` | Tentativa de abrir uma segunda carteira para o mesmo jogador na mesma moeda. |
 | **`409 Conflict`** | `conflito: chave de idempotencia reutilizada com payload divergente` | SHA-256 Canonical Check | Reutilização da mesma chave com valores ou parâmetros modificados. Previne colisão e fraude de replay. |
 | **`422 Unprocessable`** | `currency mismatch: operations require matching currencies` | Value Object `Money` | Tentativa de debitar ou creditar moeda estrangeira (ex: USD) em carteira BRL sem conversão de câmbio. |
-| **`422 Unprocessable`** | `reference transaction has already been reversed` | Verificador de Reversão SQL | Tentativa de estornar uma aposta que já foi estornada anteriormente. Previne fraude de estorno duplo (*Double Refund*). |
-| **`422 Unprocessable`** | `zero amount is not allowed for this operation` | Invariante de Domínio `Money` | Tentativa de registrar aposta ou ganho com valor zero ou negativo. |
 | **`200 OK` (Rejeição)**| `Status: REJECTED`, `FailureCode: INSUFFICIENT_FUNDS` | Máquina de Estados Finita | O jogador não possui saldo suficiente para apostar. É um desfecho legítimo de negócio auditável gravado no banco, e não uma falha de servidor. |
 | **`200 OK` (Pendente)**| `Status: PENDING_REFERENCE` | Resolução Fora de Ordem | Um estorno chegou antes da aposta original na rede distribuída. O sistema acolhe o evento para conciliação assíncrona pelo worker. |
+
+---
+
+## 7. Cockpit Visual Interativo: Jungle Slots 1987 (WebAssembly & Telemetria em Tempo Real)
+
+Além de executar os testes via terminal ou Postman, tu podes auditar visualmente 100% dos cenários deste guia através do simulador de fliperama retrô **Jungle Slots 1987**, desenvolvido com motor em **Go WebAssembly (WASM)** e áudio chiptune 8-bit sintetizado:
+
+- 🖥️ **Acesso Local (Docker / Engine Stateful Completa):** [http://localhost:8000/app/](http://localhost:8000/app/)
+- 🌐 **Acesso Online (Portfólio na Vercel):** [https://jungle-slots-1987.vercel.app](https://jungle-slots-1987.vercel.app)
+- 📱 **Acesso Mobile:** Compatibilidade total com smartphones e tablets touchscreen (iPhone / Android) com alvos de toque otimizados e vibração háptica.
+
+### Mapeamento Direto entre o Cockpit e os Cenários deste Guia
+
+1. **Giro da Aposta (`🎰 RODAR O CARIMBÓ!`):**
+   - Dispara o **Cenário 2.4 (BET)**. No Docker local, executa o débito com `SELECT ... FOR UPDATE` no PostgreSQL e insere o registro imutável no Ledger contábil.
+2. **Replay Idempotente (`🔁 REPLAY IDEMPOTENTE`):**
+   - Dispara o **Cenário 2.5 (Idempotência)**. Reenvia a exata mesma chave (`Idempotency-Key`) e payload. O sistema comprova que o saldo permanece inalterado e nenhum débito duplicado ocorre.
+3. **Estorno Regulatório (`↩️ ESTORNAR APOSTA`):**
+   - Dispara o **Cenário 2.7 (REFUND)**. Devolve o montante integral para a carteira. Um segundo clique consecutivo é bloqueado pelo botão e pela engine (Cenário E8-B - Anti-Double Refund).
+4. **Aba de Auditoria & Reconciliação Contábil (`⚖️ AUDITORIA`):**
+   - Dispara o **Cenário 2.8 (Reconciliação Zero-Divergence)**. Executa a prova matemática no Livro-Razão e exibe o badge verde de conformidade instantânea (`Diferença: R$ 0,00`).
+5. **Aba de Casos de Borda (`🧪 UNHAPPY PATHS`):**
+   - Executa interativamente os testes de saldo insuficiente (E2), invasão de tenant (E7), moeda estrangeira USD (E3), valores negativos (E10), chaves conflitantes (E4) e disputa de concorrência com 2 goroutines simultâneas, renderizando os payloads e cabeçalhos HTTP no monitor CRT.
+

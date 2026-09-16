@@ -163,6 +163,11 @@ Este documento detalha formalmente as escolhas de arquitetura, modelagem de dado
 - **Touch-Action & Ergonomia:** Interface adaptada para smartphones e tablets com botões que respeitam as zonas de alcance do polegar (touch targets de 44px a 56px), `touch-action: manipulation` para suprimir delays de clique e barra flutuante sticky de navegação rápida entre o Fliperama e a Auditoria.
 - **Haptic Engine:** Integração com a API de vibração (`navigator.vibrate`) para feedback tátil realista em apostas, vitórias e erros no celular.
 
-### 11.4. Racional Técnico: Por que não Vercel / Cloud Serverless?
-- **Incompatibilidade Arquitetural com Serverless:** O desafio exige persistência relacional transacional (PostgreSQL 16 com locks `SELECT ... FOR UPDATE` e triggers PL/pgSQL), autenticação OIDC corporativa (Keycloak 24 com JWKS) e mensageria assíncrona (AWS SQS FIFO com workers contínuos em background). A Vercel opera em paradigma efêmero/serverless, incapaz de hospedar serviços com conexões abertas de longa duração e brokers com polling contínuo.
-- **Autossuficiência Operacional:** A entrega nativa garante que qualquer avaliador clone o repositório e rode a solução com fidelidade máxima localmente via `docker compose up`, sem dependências de credenciais em nuvens de terceiros ou risco de links expirados.
+### 11.4. Racional de Entrega Híbrida: Docker Stateful vs. Portfólio Web na Vercel
+- **A Engine Stateful (Padrão Ouro para Avaliadores Técnicos):**
+  - O desafio exige persistência relacional transacional (PostgreSQL 16 com locks `SELECT ... FOR UPDATE` e triggers PL/pgSQL), autenticação OIDC corporativa (Keycloak 24 com JWKS) e mensageria assíncrona (AWS SQS FIFO com workers contínuos em background).
+  - Esta infraestrutura roda de forma 100% autossuficiente via `docker compose up -d`, entregando a API e o cockpit web embutido (`//go:embed`) em `http://localhost:8000/app/`.
+- **O Modo Portfólio WebAssembly na Nuvem ([jungle-slots-1987.vercel.app](https://jungle-slots-1987.vercel.app)):**
+  - Para permitir que recrutadores, gestores e a comunidade acessem a experiência interativa em qualquer dispositivo móvel ou desktop sem precisar instalar Docker localmente, o cockpit possui detecção automática de ambiente.
+  - Ao rodar na Vercel, o binário WebAssembly (`game.wasm`) ativa o **Modo Demonstração Portfólio**: executa toda a lógica probabilística, livro-razão contábil, replay idempotente e prova de reconciliação matemática diretamente em memória via máquina de estados compilada em Go.
+  - Isso une o melhor de dois mundos: fidelidade transacional corporativa máxima na máquina do recrutador e vitrine viva de portfólio acessível globalmente.
