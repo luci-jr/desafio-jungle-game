@@ -7,7 +7,6 @@
 > - **Nível da Vaga:** Backend Developer Júnior (Go)
 > - **Data da Proposta:** 14 de setembro de 2026
 > - **Prazo Proposto:** 3 dias corridos (Data limite: 17 de setembro de 2026)
-> - **Data de Entrega:** 16 de setembro de 2026 (Entrega antecipada com 24h de antecedência)
 > - **Stack Tecnológica:** Go 1.26.4, Uber Fx, PostgreSQL 16 (ACID, Row-Level Locking e Triggers de Imutabilidade), AWS SQS FIFO (LocalStack com DLQ e Deduplicação), Keycloak 24 (OIDC OAuth 2.0 / RS256 JWKS), WebAssembly (Go WASM) e Web Cockpit Retrô.
 
 Serviço financeiro concorrente e distribuído para processamento de apostas de provedores de jogos (*iGaming / Sportsbook*). Desenvolvido em **Go 1.26.4**, composto com **Uber Fx**, com persistência relacional ACID em **PostgreSQL 16**, mensageria assíncrona **AWS SQS FIFO** via **LocalStack**, e autenticação OIDC via **Keycloak**.
