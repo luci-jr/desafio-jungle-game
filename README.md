@@ -64,9 +64,8 @@ O último comando deve retornar o status `UP`. A API estará disponível em
 
 ## 🎮 2. Jungle Slots 1987 — Cockpit Arcade & Simulador Visual da Engine
 
-Para além da bateria de testes via terminal e Postman, este projeto inclui uma **interface visual completa de cockpit e simulador de apostas** embutida nativamente no binário Go, acessível tanto localmente quanto na nuvem para exibição de portfólio:
+Para além da bateria de testes via terminal e Postman, este projeto inclui uma **interface visual completa de cockpit e simulador de apostas** embutida nativamente no binário Go:
 
-👉 **Demonstração Online na Vercel (Portfólio Interativo — Desktop & Mobile):** [https://jungle-slots-1987.vercel.app](https://jungle-slots-1987.vercel.app) *(acessível tanto no navegador desktop quanto mobile, com motor WebAssembly, sons 8-bit, suporte touchscreen e idempotência in-browser)*  
 🖥️ **URL de Acesso Local (Docker / Go Engine Completa):** [http://localhost:8000/app/](http://localhost:8000/app/) *(ou simplesmente `http://localhost:8000/`, que redireciona automaticamente)*
 
 ### 📸 Galeria Visual do Cockpit & Simulador de Apostas
@@ -137,9 +136,8 @@ A resposta técnica envolve a **natureza arquitetural da solução**:
 1. **A Vercel é voltada a Frontends Estáticos e Funções Serverless:**
    - A plataforma Vercel foi concebida para páginas estáticas (HTML/CSS/JS) e Serverless Functions efêmeras (Node.js/Edge).
    - Ela **não suporta execução contínua de containers Stateful Docker** (PostgreSQL 16 com triggers e locks transacionais, LocalStack emulando AWS SQS FIFO com workers em loop constante, e Keycloak 24 como Identity Provider).
-2. **Duplo Modo Operacional: Local Stateful vs. Portfólio Vercel:**
-   - **No ambiente local / Docker:** A aplicação conecta-se à engine Go completa (`SELECT ... FOR UPDATE`, PostgreSQL, Keycloak OIDC, fila SQS FIFO e reconciliação nativa em SQL).
-   - **No ambiente Vercel ([jungle-slots-1987.vercel.app](https://jungle-slots-1987.vercel.app)):** O cockpit detecta automaticamente o ambiente serverless e ativa o **Modo Demonstração Portfólio**, emulando a transacionalidade contábil, livro-razão no cliente, replays de idempotência e reconciliação matemática via client-side state machine, permitindo que qualquer recrutador ou visitante interaja com o fliperama sem necessidade de infraestrutura de banco de dados externa.
+2. **Ambiente Local e Execução Autônoma:**
+   - **No ambiente local / Docker:** A aplicação conecta-se à engine Go completa (`SELECT ... FOR UPDATE`, PostgreSQL, Keycloak OIDC, fila SQS FIFO e reconciliação nativa em SQL), provendo validação determinística e auditabilidade contábil com o cockpit integrado consumindo a API real.
 3. **A Decisão Arquitetural Sênior (Single-Binary Self-Hosted com `//go:embed`):**
    - Optamos pelo padrão ouro do ecossistema Go corporativo: embutir todos os artefatos estáticos (HTML, CSS, JS e o binário WebAssembly `game.wasm`) diretamente dentro do binário compilado da API Go através da diretiva `//go:embed static` ([`internal/infrastructure/http/web/ui.go`](internal/infrastructure/http/web/ui.go)).
    - **Vantagem para o Avaliador:** Quem clona o repositório e sobe o Docker Compose tem a **solução 100% operacional no ar em segundos**, sem dependência de nuvens externas de terceiros, sem risco de expiração de links, com latência zero e suporte completo *offline-first*.

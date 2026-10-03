@@ -987,8 +987,7 @@ curl -s -X POST http://localhost:8000/wagering/transactions \
 Além de executar os testes via terminal ou Postman, tu podes auditar visualmente 100% dos cenários deste guia através do simulador de fliperama retrô **Jungle Slots 1987**, desenvolvido com motor em **Go WebAssembly (WASM)** e áudio chiptune 8-bit sintetizado:
 
 - 🖥️ **Acesso Local (Docker / Engine Stateful Completa):** [http://localhost:8000/app/](http://localhost:8000/app/)
-- 🌐 **Acesso Online (Portfólio na Vercel):** [https://jungle-slots-1987.vercel.app](https://jungle-slots-1987.vercel.app)
-- 📱 **Acesso Mobile:** Compatibilidade total com smartphones e tablets touchscreen (iPhone / Android) com alvos de toque otimizados e vibração háptica.
+- 📱 **Acesso Mobile:** Compatibilidade total com smartphones e tablets touchscreen (iPhone / Android) com alvos de toque otimizados e vibração háptica via rede local.
 
 ### Mapeamento Direto entre o Cockpit e os Cenários deste Guia
 
